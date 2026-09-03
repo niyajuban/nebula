@@ -8,7 +8,7 @@
 
 ---
 
-## 🛠️ Components List
+## Components List
 
 | # | Item |
 |---|---|
@@ -26,7 +26,7 @@
 
 ---
 
-## 👥 Contributors
+## Contributors
 
 | Name | GitHub |
 |---|---|
@@ -38,6 +38,7 @@ See [CONTRIBUTORS.md](./CONTRIBUTORS.md)
 
 ---
 
-## 📄 License
+## License
 
 TBD
+
