@@ -1,10 +1,10 @@
 # 👥 Contributors
 
-Thanks to everyone who made Nebula happen! ✨
-
-| Name | Role |
+| Name | GitHub |
 |---|---|
-| — | Add your name here |
+| Niya Juban | [@niyajuban](https://github.com/niyajuban) |
+| Swathi | [@swathi-o](https://github.com/swathi-o) |
+| Aparajita | [@AparajitaY](https://github.com/AparajitaY) |
 
 ---
 
