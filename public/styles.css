@@ -1,0 +1,1017 @@
+﻿:root {
+  --bg-pure-black: #000000;
+  --bg-chassis: rgba(10, 10, 14, 0.94);
+  --bg-screen: rgba(14, 14, 19, 0.98);
+  --bg-item: #15151c;
+  --bg-item-hover: #1e1e28;
+  
+  --lilac-primary: #d8b4fe;
+  --lilac-hover: #ffffff;
+  --lilac-muted: #c084fc;
+  --lilac-deep: #9333ea;
+  --lilac-glow: rgba(216, 180, 254, 0.4);
+  --lilac-subtle: rgba(216, 180, 254, 0.08);
+
+  --text-pure: #ffffff;
+  --text-main: #f4f4f5;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
+
+  --border-chassis: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Strictly non-scrollable single-page viewport */
+html, body {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: var(--bg-pure-black);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #000000;
+  position: relative;
+}
+
+/* ----------------------------------------------------
+   SPACE & STARS BACKGROUND CANVAS
+---------------------------------------------------- */
+.space-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-viewport {
+  width: 100%;
+  max-width: 1100px;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 1.4rem 1.8rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+/* ----------------------------------------------------
+   LOGO (Seamless 100% blend into pure black background)
+---------------------------------------------------- */
+.logo-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 0.2rem;
+  flex-shrink: 0;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+}
+
+.brand-logo {
+  width: 440px;
+  max-width: 80vw;
+  height: auto;
+  display: block;
+  mix-blend-mode: screen;
+  mask-image: radial-gradient(ellipse 95% 85% at center, black 65%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 95% 85% at center, black 65%, transparent 100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------
+   CONSOLE ARENA (2 Huge Triangular Buttons + Console Screen)
+---------------------------------------------------- */
+.console-arena {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  width: 100%;
+  flex: 1;
+  max-height: 520px;
+  margin-bottom: 0.6rem;
+  position: relative;
+  z-index: 2;
+}
+
+/* 
+   HUGE PURE TRIANGULAR BUTTONS
+   (NO cylindrical background, NO box outline, pure massive glowing triangles)
+*/
+.nintendo-triangle-btn {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0.8rem !important;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lilac-primary);
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.26s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.giant-triangle {
+  filter: drop-shadow(0 0 14px var(--lilac-glow));
+  transition: all 0.26s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Hover: Pure glowing fun bounce, ZERO cylindrical background */
+.nintendo-triangle-btn:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.nintendo-triangle-btn.left:hover .giant-triangle {
+  color: var(--lilac-hover);
+  transform: scale(1.22) translateX(-10px);
+  filter: drop-shadow(0 0 28px rgba(216, 180, 254, 0.95))
+          drop-shadow(0 0 50px rgba(168, 85, 247, 0.75));
+}
+
+.nintendo-triangle-btn.right:hover .giant-triangle {
+  color: var(--lilac-hover);
+  transform: scale(1.22) translateX(10px);
+  filter: drop-shadow(0 0 28px rgba(216, 180, 254, 0.95))
+          drop-shadow(0 0 50px rgba(168, 85, 247, 0.75));
+}
+
+/* Active click punch */
+.nintendo-triangle-btn:active .giant-triangle {
+  transform: scale(0.88) !important;
+  filter: drop-shadow(0 0 12px var(--lilac-primary)) !important;
+}
+
+/* ----------------------------------------------------
+   CONSOLE TYPE SCREEN CHASSIS
+---------------------------------------------------- */
+.console-chassis {
+  flex: 1;
+  max-width: 690px;
+  height: 100%;
+  max-height: 500px;
+  background: var(--bg-chassis);
+  backdrop-filter: blur(12px);
+  border-radius: 36px;
+  padding: 8px;
+  border: 1px solid var(--border-chassis);
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.95),
+              0 0 40px -10px rgba(168, 85, 247, 0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+.console-screen {
+  flex: 1;
+  background: var(--bg-screen);
+  border-radius: 28px;
+  padding: 1.8rem 2.2rem;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Screen Top Bar */
+.screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 1.4rem;
+  flex-shrink: 0;
+}
+
+.mode-info {
+  display: flex;
+  align-items: baseline;
+  gap: 0.85rem;
+}
+
+.mode-number {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--lilac-primary);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.mode-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-pure);
+}
+
+/* Mode Pagination Dots */
+.mode-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mode-dots .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.mode-dots .dot:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.mode-dots .dot.active {
+  background: var(--lilac-primary);
+  width: 20px;
+  border-radius: 999px;
+  box-shadow: 0 0 10px var(--lilac-glow);
+}
+
+/* Screen Content Area */
+.screen-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mode-view {
+  display: none;
+  width: 100%;
+  height: 100%;
+  animation: fadeInView 0.22s ease forwards;
+}
+
+.mode-view.active {
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes fadeInView {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Fun button base style - NO box outline */
+.fun-btn {
+  outline: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.fun-btn:hover {
+  transform: translateY(-2px) scale(1.04);
+}
+
+.fun-btn:active {
+  transform: scale(0.95);
+}
+
+/* ----------------------------------------------------
+   1. TO DO LIST VIEW (Dynamic)
+---------------------------------------------------- */
+.todo-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.todo-heading {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: var(--text-pure);
+  margin-bottom: 0.9rem;
+  letter-spacing: -0.02em;
+}
+
+.todo-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+
+.todo-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-pure);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  padding: 0.6rem 0.2rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.todo-input:focus {
+  border-bottom-color: var(--lilac-primary);
+}
+
+.todo-input::placeholder {
+  color: var(--text-dim);
+}
+
+.todo-add-btn {
+  background: var(--lilac-primary);
+  color: #0d0d12;
+  border-radius: 14px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px var(--lilac-glow);
+}
+
+.todo-add-btn:hover {
+  background: #ffffff;
+}
+
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-bottom: 0.8rem;
+}
+
+.todo-list::-webkit-scrollbar {
+  width: 4px;
+}
+.todo-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1.15rem;
+  background: var(--bg-item);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: all 0.2s ease;
+}
+
+.todo-item:hover {
+  background: var(--bg-item-hover);
+  border-color: rgba(216, 180, 254, 0.12);
+}
+
+.todo-item-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex: 1;
+  cursor: pointer;
+}
+
+.todo-checkbox {
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  border: 1.5px solid var(--text-dim);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.todo-item.completed .todo-checkbox {
+  background: var(--lilac-primary);
+  border-color: var(--lilac-primary);
+}
+
+.todo-checkbox svg { display: none; }
+.todo-item.completed .todo-checkbox svg { display: block; }
+
+.todo-text {
+  font-size: 0.94rem;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+  word-break: break-word;
+}
+
+.todo-item.completed .todo-text {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+.todo-del-btn {
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+}
+
+.todo-del-btn:hover {
+  color: #fb7185;
+  background: rgba(251, 113, 133, 0.1);
+}
+
+.todo-footer {
+  margin-top: auto;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.todo-remaining {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.todo-remaining span {
+  color: var(--lilac-primary);
+}
+
+/* ----------------------------------------------------
+   2. POMODORO VIEW (Dynamic - Clean)
+---------------------------------------------------- */
+.pomo-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+}
+
+.pomo-tabs {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.35rem;
+  border-radius: 999px;
+  margin-bottom: 1.8rem;
+}
+
+.pomo-tab {
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0.55rem 1.25rem;
+  border-radius: 999px;
+}
+
+.pomo-tab:hover {
+  color: var(--text-pure);
+}
+
+.pomo-tab.active {
+  background: var(--lilac-primary);
+  color: #09090e;
+  box-shadow: 0 4px 14px var(--lilac-glow);
+}
+
+.pomo-clock {
+  margin-bottom: 2rem;
+}
+
+.pomo-time {
+  font-family: var(--font-sans);
+  font-size: 5.2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--text-pure);
+  line-height: 1;
+  margin-bottom: 0.6rem;
+  text-shadow: 0 0 35px rgba(216, 180, 254, 0.28);
+}
+
+.pomo-cycle-badge {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--lilac-primary);
+}
+
+.pomo-controls {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.pomo-main-btn {
+  background: var(--lilac-primary);
+  color: #0b0b10;
+  font-family: var(--font-sans);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 1.05rem 3.6rem;
+  border-radius: 999px;
+  box-shadow: 0 8px 25px var(--lilac-glow);
+}
+
+.pomo-main-btn:hover {
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(216, 180, 254, 0.45);
+}
+
+.pomo-sec-btn {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 600;
+  padding: 0.9rem 1.55rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pomo-sec-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-pure);
+}
+
+/* ----------------------------------------------------
+   3. MUSIC CONTROL (Static - Bluetooth)
+---------------------------------------------------- */
+.music-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.music-status-card {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  background: var(--bg-item);
+  padding: 1.15rem 2.2rem;
+  border-radius: 20px;
+  border: 1px solid rgba(216, 180, 254, 0.12);
+  margin-bottom: 2rem;
+}
+
+.music-beacon {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--lilac-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lilac-primary);
+}
+
+.beacon-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1.5px solid var(--lilac-primary);
+  animation: beaconWave 2s infinite ease-out;
+}
+
+@keyframes beaconWave {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.music-status-text { text-align: left; }
+.music-state-title { font-size: 1.15rem; font-weight: 700; color: var(--text-pure); }
+.music-state-sub { font-size: 0.88rem; font-weight: 500; color: var(--lilac-primary); margin-top: 2px; }
+
+.music-visualizer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 48px;
+  margin-bottom: 2rem;
+}
+
+.music-visualizer .bar {
+  width: 5px;
+  background: var(--lilac-primary);
+  border-radius: 999px;
+  animation: soundBars 1.2s infinite ease-in-out;
+}
+
+.music-visualizer.paused .bar {
+  height: 6px !important;
+  animation: none !important;
+  opacity: 0.4;
+}
+
+.bar-1 { height: 16px; animation-delay: 0.1s; }
+.bar-2 { height: 34px; animation-delay: 0.3s; }
+.bar-3 { height: 24px; animation-delay: 0.15s; }
+.bar-4 { height: 40px; animation-delay: 0.45s; }
+.bar-5 { height: 30px; animation-delay: 0.2s; }
+.bar-6 { height: 42px; animation-delay: 0.5s; }
+.bar-7 { height: 26px; animation-delay: 0.25s; }
+.bar-8 { height: 15px; animation-delay: 0.35s; }
+
+@keyframes soundBars {
+  0%, 100% { height: 8px; }
+  50% { height: 44px; }
+}
+
+.music-controls {
+  display: flex;
+  align-items: center;
+  gap: 1.6rem;
+}
+
+.music-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.music-btn.primary {
+  width: 78px;
+  height: 78px;
+  background: var(--lilac-primary);
+  color: #0b0b10;
+  box-shadow: 0 8px 25px var(--lilac-glow);
+}
+
+.music-btn.primary:hover {
+  background: #ffffff;
+}
+
+.music-btn.secondary {
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+
+.music-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-pure);
+}
+
+/* ----------------------------------------------------
+   4. GAME MODE (Console Logo)
+---------------------------------------------------- */
+.game-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.console-badge-container {
+  position: relative;
+  width: 96px;
+  height: 80px;
+  margin-bottom: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.console-icon-card {
+  width: 90px;
+  height: 68px;
+  border-radius: 20px;
+  background: var(--lilac-subtle);
+  color: var(--lilac-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 0 30px var(--lilac-glow);
+  border: 1px solid rgba(216, 180, 254, 0.2);
+}
+
+.console-pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 24px;
+  border: 1.5px solid var(--lilac-muted);
+  animation: consolePulse 2.5s infinite ease-out;
+}
+
+@keyframes consolePulse {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+.game-headline {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--text-pure);
+  margin-bottom: 0.4rem;
+}
+
+.game-subtext {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+.game-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 0.65rem 1.3rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ----------------------------------------------------
+   5. WEATHER (Static)
+---------------------------------------------------- */
+.weather-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+}
+
+.weather-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  margin-bottom: 1.6rem;
+  text-transform: uppercase;
+}
+
+.weather-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  width: 100%;
+  max-width: 520px;
+  margin-bottom: 1.6rem;
+}
+
+.weather-card {
+  background: var(--bg-item);
+  padding: 1.6rem 1.4rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.25s ease;
+}
+
+.weather-card:hover {
+  border-color: rgba(216, 180, 254, 0.2);
+  transform: translateY(-2px);
+}
+
+.weather-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--lilac-primary);
+  margin-bottom: 0.9rem;
+}
+
+.card-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.weather-value-large {
+  font-size: 3.2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--text-pure);
+  line-height: 1;
+  margin-bottom: 0.6rem;
+}
+
+.weather-unit {
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--lilac-primary);
+  margin-left: 3px;
+}
+
+.weather-meta { font-size: 0.74rem; color: var(--text-dim); }
+
+.weather-sensor-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------------
+   6. AI CHATBOT (Hardware Input & Nebula Output)
+---------------------------------------------------- */
+.chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+}
+
+.chat-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.2rem;
+}
+
+.chat-mode-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.chat-state-indicator {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--lilac-subtle);
+  color: var(--lilac-primary);
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  animation: pulseLilac 2s infinite ease-in-out;
+}
+
+@keyframes pulseLilac {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.4; }
+}
+
+.chat-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.4rem;
+}
+
+.chat-bubble {
+  padding: 1.15rem 1.4rem;
+  border-radius: 18px;
+}
+
+.chat-bubble.user {
+  background: var(--bg-item);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-bubble.bot {
+  background: rgba(216, 180, 254, 0.05);
+  border: 1px solid rgba(216, 180, 254, 0.18);
+}
+
+.bubble-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.45rem;
+}
+
+.bot-sparkle {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lilac-primary);
+  box-shadow: 0 0 8px var(--lilac-primary);
+}
+
+.bubble-text {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--text-pure);
+  line-height: 1.4;
+}
+
+.bubble-audio-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--lilac-primary);
+  margin-top: 0.65rem;
+}
+
+.audio-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--lilac-primary);
+  animation: dotBlink 1.2s infinite ease-in-out;
+}
+.audio-dot:nth-child(2) { animation-delay: 0.2s; }
+.audio-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotBlink {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.chat-static-notice {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding: 0.6rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Dots */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.green {
+  background-color: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+}
+
+.status-dot.purple {
+  background-color: var(--lilac-primary);
+  box-shadow: 0 0 8px var(--lilac-glow);
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .console-arena {
+    gap: 0.8rem;
+  }
+  .giant-triangle {
+    width: 50px;
+    height: 64px;
+  }
+}

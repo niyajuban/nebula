@@ -1,0 +1,309 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nebula CyberDeck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Space & Stars Canvas Effect -->
+  <canvas id="space-canvas" class="space-canvas"></canvas>
+
+  <div class="app-viewport">
+    
+    <!-- Big, Wider Nebula Logo (seamlessly blended into pure black background) -->
+    <header class="logo-section">
+      <img src="assets/logo.jpg" alt="Nebula Logo" class="brand-logo">
+    </header>
+
+    <!-- Nintendo-Style Console Arena: 2 Huge Triangular Buttons + Console Screen -->
+    <div class="console-arena">
+      
+      <!-- Huge Fun Pure Triangular Left Button -->
+      <button class="nintendo-triangle-btn left" id="prev-mode-btn" aria-label="Previous Mode">
+        <svg class="giant-triangle" width="70" height="88" viewBox="0 0 26 32" fill="currentColor" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round">
+          <polygon points="22,3 4,16 22,29"></polygon>
+        </svg>
+      </button>
+
+      <!-- Console-Type Screen -->
+      <div class="console-chassis">
+        <main class="console-screen">
+          
+          <!-- Screen Top Bar: Mode Number, Title, and Dots -->
+          <div class="screen-header">
+            <div class="mode-info">
+              <span class="mode-number" id="screen-mode-num">MODE 3/6</span>
+              <h2 class="mode-title" id="screen-mode-title">To do List</h2>
+            </div>
+            <div class="mode-dots" id="mode-dots">
+              <span class="dot" data-idx="0"></span>
+              <span class="dot" data-idx="1"></span>
+              <span class="dot active" data-idx="2"></span>
+              <span class="dot" data-idx="3"></span>
+              <span class="dot" data-idx="4"></span>
+              <span class="dot" data-idx="5"></span>
+            </div>
+          </div>
+
+          <!-- Screen Views Container -->
+          <div class="screen-content">
+
+            <!-- 1. MUSIC CONTROL (Static - Bluetooth) -->
+            <section class="mode-view" id="view-music">
+              <div class="music-wrapper">
+                <div class="music-status-card">
+                  <div class="music-beacon">
+                    <span class="beacon-pulse"></span>
+                    <svg class="beacon-icon" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M7 7l10 10-5 5V2l5 5L7 17"/>
+                    </svg>
+                  </div>
+                  <div class="music-status-text">
+                    <div class="music-state-title" id="music-state-title">Bluetooth Connected</div>
+                    <div class="music-state-sub" id="music-playing-sub">Music Playing</div>
+                  </div>
+                </div>
+
+                <!-- Visualizer wave bars -->
+                <div class="music-visualizer" id="music-visualizer">
+                  <span class="bar bar-1"></span>
+                  <span class="bar bar-2"></span>
+                  <span class="bar bar-3"></span>
+                  <span class="bar bar-4"></span>
+                  <span class="bar bar-5"></span>
+                  <span class="bar bar-6"></span>
+                  <span class="bar bar-7"></span>
+                  <span class="bar bar-8"></span>
+                </div>
+
+                <!-- Big Fun Borderless Music Buttons -->
+                <div class="music-controls">
+                  <button class="music-btn secondary fun-btn" id="music-prev-btn" aria-label="Previous Track">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="19 20 9 12 19 4 19 20"></polygon>
+                      <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="3" stroke-linecap="round"></line>
+                    </svg>
+                  </button>
+                  <button class="music-btn primary fun-btn" id="music-play-btn" aria-label="Play/Pause">
+                    <svg class="icon-play" id="icon-play" width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                    </svg>
+                    <svg class="icon-pause" id="icon-pause" width="34" height="34" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+                      <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+                      <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+                    </svg>
+                  </button>
+                  <button class="music-btn secondary fun-btn" id="music-next-btn" aria-label="Next Track">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                      <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="3" stroke-linecap="round"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- 2. POMODORO TIMER (Dynamic - Clean) -->
+            <section class="mode-view" id="view-pomodoro">
+              <div class="pomo-wrapper">
+                <div class="pomo-tabs">
+                  <button class="pomo-tab active fun-btn" data-time="25" data-mode="pomodoro">Pomodoro</button>
+                  <button class="pomo-tab fun-btn" data-time="5" data-mode="shortBreak">Short Break</button>
+                  <button class="pomo-tab fun-btn" data-time="15" data-mode="longBreak">Long Break</button>
+                </div>
+
+                <div class="pomo-clock">
+                  <div class="pomo-time" id="pomo-timer-display">25:00</div>
+                  <div class="pomo-cycle-badge" id="pomo-status-label">#1 Time to focus!</div>
+                </div>
+
+                <div class="pomo-controls">
+                  <button class="pomo-main-btn fun-btn" id="pomo-start-btn">START</button>
+                  <button class="pomo-sec-btn fun-btn" id="pomo-reset-btn" title="Reset Timer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                      <path d="M3 3v5h5"/>
+                    </svg>
+                    <span>Reset</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- 3. TO DO LIST (Dynamic) -->
+            <section class="mode-view active" id="view-todo">
+              <div class="todo-wrapper">
+                <h3 class="todo-heading">Your To Do</h3>
+                
+                <form class="todo-input-row" id="todo-form">
+                  <input 
+                    type="text" 
+                    id="todo-input" 
+                    class="todo-input" 
+                    placeholder="Add new task" 
+                    autocomplete="off"
+                    maxlength="100"
+                  />
+                  <button type="submit" class="todo-add-btn fun-btn" id="todo-add-btn" aria-label="Add Task">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  </button>
+                </form>
+
+                <div class="todo-list" id="todo-list">
+                  <!-- Populated dynamically -->
+                </div>
+
+                <div class="todo-footer">
+                  <p class="todo-remaining" id="todo-remaining">Your remaining todos : <span id="todo-count">3</span></p>
+                </div>
+              </div>
+            </section>
+
+            <!-- 4. GAME MODE (Console Logo) -->
+            <section class="mode-view" id="view-game">
+              <div class="game-wrapper">
+                <div class="console-badge-container">
+                  <div class="console-pulse-ring"></div>
+                  <div class="console-icon-card">
+                    <svg width="56" height="38" viewBox="0 0 64 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect x="2" y="2" width="60" height="38" rx="10" stroke="currentColor" stroke-width="2.5"/>
+                      <rect x="18" y="7" width="28" height="28" rx="4" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="1.8"/>
+                      <path d="M8 17h4v-4h2v4h4v2h-4v4h-2v-4H8v-2z" fill="currentColor"/>
+                      <circle cx="11" cy="29" r="2.2" fill="currentColor"/>
+                      <circle cx="53" cy="14" r="1.6" fill="currentColor"/>
+                      <circle cx="49" cy="18" r="1.6" fill="currentColor"/>
+                      <circle cx="57" cy="18" r="1.6" fill="currentColor"/>
+                      <circle cx="53" cy="22" r="1.6" fill="currentColor"/>
+                      <circle cx="53" cy="29" r="2.2" fill="currentColor"/>
+                      <path d="M10 2V0h8v2M46 2V0h8v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                  </div>
+                </div>
+
+                <h3 class="game-headline">Game Mode Active</h3>
+                <p class="game-subtext">Console controller engaged & synchronized</p>
+
+                <div class="game-status-strip">
+                  <span class="status-dot green"></span>
+                  <span>Direct hardware link active • Standby mode ready</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 5. WEATHER (Static) -->
+            <section class="mode-view" id="view-weather">
+              <div class="weather-wrapper">
+                <p class="weather-subtitle">Atmospheric Telemetry via BMP180</p>
+                
+                <div class="weather-metrics">
+                  <div class="weather-card">
+                    <div class="weather-header">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+                      </svg>
+                      <span class="card-label">TEMPERATURE</span>
+                    </div>
+                    <div class="weather-value-large">
+                      <span id="weather-temp">24.3</span><span class="weather-unit">°C</span>
+                    </div>
+                    <div class="weather-meta">Ambient Room Reading</div>
+                  </div>
+
+                  <div class="weather-card">
+                    <div class="weather-header">
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <path d="M12 7v5l3 3"></path>
+                      </svg>
+                      <span class="card-label">PRESSURE</span>
+                    </div>
+                    <div class="weather-value-large">
+                      <span id="weather-pressure">1013.2</span><span class="weather-unit">hPa</span>
+                    </div>
+                    <div class="weather-meta">Standard Barometric Sea Level</div>
+                  </div>
+                </div>
+
+                <div class="weather-sensor-status">
+                  <span class="status-dot green"></span>
+                  <span>BMP180 Sensor: Calibrated & Transmitting</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 6. AI CHATBOT (Hardware Input & Nebula Output) -->
+            <section class="mode-view" id="view-chatbot">
+              <div class="chat-wrapper">
+                <div class="chat-status-bar">
+                  <div class="chat-mode-badge">
+                    <span class="status-dot purple"></span>
+                    <span>HARDWARE VOICE TELEMETRY</span>
+                  </div>
+                  <div class="chat-state-indicator" id="chat-state-badge">
+                    VOICE_THINKING
+                  </div>
+                </div>
+
+                <div class="chat-conversation">
+                  <!-- User Input from Hardware -->
+                  <div class="chat-bubble user">
+                    <div class="bubble-header">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                      </svg>
+                      <span>Transcribed User Input (Hardware Mic / Push-to-Talk)</span>
+                    </div>
+                    <p class="bubble-text" id="chat-transcript">"What is the weather today?"</p>
+                  </div>
+
+                  <!-- Nebula Output Transcribed -->
+                  <div class="chat-bubble bot">
+                    <div class="bubble-header">
+                      <div class="bot-sparkle"></div>
+                      <span>Transcribed Nebula Output</span>
+                    </div>
+                    <p class="bubble-text" id="chat-reply">"I don’t have live weather, but you can check an app."</p>
+                    <div class="bubble-audio-indicator">
+                      <span class="audio-dot"></span>
+                      <span class="audio-dot"></span>
+                      <span class="audio-dot"></span>
+                      <span>Hardware speaker synthesis transcribed in real time</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="chat-static-notice">
+                  <span>Hardware microphone & voice session active • Real-time live transcript stream</span>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </main>
+      </div>
+
+      <!-- Huge Fun Pure Triangular Right Button -->
+      <button class="nintendo-triangle-btn right" id="next-mode-btn" aria-label="Next Mode">
+        <svg class="giant-triangle" width="70" height="88" viewBox="0 0 26 32" fill="currentColor" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round">
+          <polygon points="4,3 22,16 4,29"></polygon>
+        </svg>
+      </button>
+
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

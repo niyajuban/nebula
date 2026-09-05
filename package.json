@@ -1,0 +1,17 @@
+﻿{
+  "name": "nebula-cyberdeck-dashboard",
+  "version": "2.0.0",
+  "description": "Minimalist companion web dashboard for the Nebula ESP32 CyberDeck",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "nebula",
+    "cyberdeck",
+    "esp32",
+    "dashboard"
+  ],
+  "author": "Nebula Team",
+  "license": "MIT"
+}
