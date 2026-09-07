@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Nebula CyberDeck Companion Web Dashboard
  * Console-Style Interface with Deep Space & Stars Background
  */
@@ -572,10 +572,23 @@ async function fetchSensors() {
     if (!res.ok) return;
     const data = await res.json();
     if (data.temperatureC !== undefined) {
-      document.getElementById('weather-temp').textContent = data.temperatureC.toFixed(1);
+      const tempEl = document.getElementById('weather-temp');
+      if (tempEl) tempEl.textContent = Number(data.temperatureC).toFixed(1);
     }
     if (data.pressureHpa !== undefined) {
-      document.getElementById('weather-pressure').textContent = data.pressureHpa.toFixed(1);
+      const pressEl = document.getElementById('weather-pressure');
+      if (pressEl) pressEl.textContent = Number(data.pressureHpa).toFixed(1);
+    }
+    const dotEl = document.getElementById('weather-sensor-dot');
+    const textEl = document.getElementById('weather-sensor-status-text');
+    if (dotEl && textEl) {
+      if (data.isLiveHardware) {
+        dotEl.className = 'status-dot green';
+        textEl.textContent = 'BMP180 Sensor: Live Hardware Sync (ESP32 Connected)';
+      } else {
+        dotEl.className = 'status-dot yellow';
+        textEl.textContent = 'BMP180 Sensor: Standby (Awaiting ESP32 Telemetry)';
+      }
     }
   } catch (err) {}
 }

@@ -1,4 +1,4 @@
-﻿const http = require('http');
+const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -71,7 +71,9 @@ const state = {
   sensors: {
     bmpAvailable: true,
     temperatureC: 24.3,
-    pressureHpa: 1013.2
+    pressureHpa: 1013.2,
+    isLiveHardware: false,
+    lastTelemetryTime: 0
   },
   bluetooth: {
     audioStarted: true,
@@ -397,13 +399,63 @@ const server = http.createServer((req, res) => {
   }
 
   // ============================================================
-  // 2. DASHBOARD API ENDPOINTS
+  // 2. DASHBOARD & TELEMETRY API ENDPOINTS
   // ============================================================
+
+  // --- POST /api/telemetry (or /api/sensors) : Ingest Live Hardware Readings from ESP32 ---
+  if ((pathname === '/api/telemetry' || pathname === '/api/sensors') && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body || '{}');
+        if (json.temperatureC !== undefined || json.temperature !== undefined) {
+          state.sensors.temperatureC = Number(json.temperatureC !== undefined ? json.temperatureC : json.temperature);
+        }
+        if (json.pressureHpa !== undefined || json.pressure !== undefined) {
+          state.sensors.pressureHpa = Number(json.pressureHpa !== undefined ? json.pressureHpa : json.pressure);
+        }
+        if (json.bmpAvailable !== undefined) {
+          state.sensors.bmpAvailable = Boolean(json.bmpAvailable);
+        }
+        if (json.freeHeap !== undefined) {
+          state.freeHeap = Number(json.freeHeap);
+        }
+        if (json.rssi !== undefined) {
+          state.wifi.rssi = Number(json.rssi);
+        }
+        if (json.screen !== undefined) {
+          state.screen.current = String(json.screen);
+        }
+
+        state.sensors.lastTelemetryTime = Date.now();
+        state.sensors.isLiveHardware = true;
+
+        console.log(`[Hardware Telemetry Received] Temp: ${state.sensors.temperatureC}°C, Press: ${state.sensors.pressureHpa} hPa, RSSI: ${state.wifi.rssi} dBm`);
+
+        sendJson(res, 200, {
+          ok: true,
+          message: 'Hardware telemetry recorded',
+          sensors: {
+            temperatureC: state.sensors.temperatureC,
+            pressureHpa: state.sensors.pressureHpa,
+            bmpAvailable: state.sensors.bmpAvailable
+          }
+        });
+      } catch (err) {
+        sendJson(res, 400, { ok: false, error: 'Invalid JSON payload' });
+      }
+    });
+    return;
+  }
 
   if (pathname === '/api/status' && req.method === 'GET') {
     const uptime = Math.floor((Date.now() - state.startTime) / 1000);
-    const tempJitter = Number((state.sensors.temperatureC + (Math.sin(uptime / 20) * 0.1)).toFixed(1));
-    const pressJitter = Number((state.sensors.pressureHpa + (Math.cos(uptime / 35) * 0.2)).toFixed(1));
+    const isLive = (Date.now() - state.sensors.lastTelemetryTime) < 45000;
+    state.sensors.isLiveHardware = isLive;
+
+    const temp = isLive ? state.sensors.temperatureC : Number((state.sensors.temperatureC + (Math.sin(uptime / 20) * 0.1)).toFixed(1));
+    const press = isLive ? state.sensors.pressureHpa : Number((state.sensors.pressureHpa + (Math.cos(uptime / 35) * 0.2)).toFixed(1));
 
     return sendJson(res, 200, {
       device: state.device,
@@ -414,8 +466,10 @@ const server = http.createServer((req, res) => {
       screen: state.screen,
       sensors: {
         bmpAvailable: state.sensors.bmpAvailable,
-        temperatureC: tempJitter,
-        pressureHpa: pressJitter
+        temperatureC: temp,
+        pressureHpa: press,
+        isLiveHardware: isLive,
+        lastTelemetryTime: state.sensors.lastTelemetryTime
       },
       bluetooth: state.bluetooth,
       chatbot: state.chatbot
@@ -424,14 +478,19 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/sensors' && req.method === 'GET') {
     const uptime = Math.floor((Date.now() - state.startTime) / 1000);
-    const tempJitter = Number((state.sensors.temperatureC + (Math.sin(uptime / 20) * 0.1)).toFixed(1));
-    const pressJitter = Number((state.sensors.pressureHpa + (Math.cos(uptime / 35) * 0.2)).toFixed(1));
+    const isLive = (Date.now() - state.sensors.lastTelemetryTime) < 45000;
+    state.sensors.isLiveHardware = isLive;
+
+    const temp = isLive ? state.sensors.temperatureC : Number((state.sensors.temperatureC + (Math.sin(uptime / 20) * 0.1)).toFixed(1));
+    const press = isLive ? state.sensors.pressureHpa : Number((state.sensors.pressureHpa + (Math.cos(uptime / 35) * 0.2)).toFixed(1));
 
     return sendJson(res, 200, {
       timestamp: new Date().toISOString(),
-      temperatureC: tempJitter,
-      pressureHpa: pressJitter,
-      bmpAvailable: state.sensors.bmpAvailable
+      temperatureC: temp,
+      pressureHpa: press,
+      bmpAvailable: state.sensors.bmpAvailable,
+      isLiveHardware: isLive,
+      lastTelemetryTime: state.sensors.lastTelemetryTime
     });
   }
 
@@ -536,10 +595,11 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log('====================================================');
   console.log(`✨ Nebula Combined Backend running at http://localhost:${PORT}`);
-  console.log(`📡 ESP32 Chatbot Endpoints:`);
+  console.log(`📡 ESP32 Chatbot & Telemetry Endpoints:`);
   console.log(`   - POST /transcribe (Deepgram STT: ${config.DEEPGRAM_STT_MODEL})`);
   console.log(`   - POST /ask        (Gemini AI:     ${config.GEMINI_MODEL})`);
   console.log(`   - POST /tts        (Deepgram TTS: ${config.DEEPGRAM_TTS_MODEL})`);
+  console.log(`   - POST /api/telemetry (Live BMP180 & hardware state ingestion)`);
   console.log(`🖥️  Web Dashboard Endpoints:`);
   console.log(`   - GET  /api/status`);
   console.log(`   - GET  /api/sensors`);
