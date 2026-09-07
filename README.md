@@ -34,8 +34,6 @@
 | Swathi | [@swathi-o](https://github.com/swathi-o) |
 | Aparajita | [@AparajitaY](https://github.com/AparajitaY) |
 
-See [CONTRIBUTORS.md](./CONTRIBUTORS.md)
-
 ---
 
 ## License
