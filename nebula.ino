@@ -8,9 +8,9 @@
 #include <Adafruit_BMP085.h>
 #include "AudioTools.h"
 
-const char* WIFI_SSID = "IceApple";
-const char* WIFI_PASSWORD = "123456789";
-const char* SERVER = "http://10.48.221.62:3000";
+const char* WIFI_SSID = "YOUR_SSID";
+const char* WIFI_PASSWORD = "YOUR_PASSWORD";
+const char* SERVER = "http://<INSERT_YOUR_IPADDRESS>:3000";
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
