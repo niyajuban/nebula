@@ -94,12 +94,43 @@ const state = {
     lastReply: "I don't have live weather, but you can check an app."
   },
   pomodoro: {
+    state: "IDLE", // "IDLE", "RUNNING", "PAUSED", "BREAK"
+    mode: "WORK",  // "WORK", "BREAK"
+    workDuration: 25 * 60,
+    breakDuration: 5 * 60,
+    timeLeft: 25 * 60,
+    sessionsCompleted: 0
+  },
+  todos: [
+    { id: 1, text: "Build CyberDeck", completed: true },
+    { id: 2, text: "Flash ESP32 Firmware", completed: true },
+    { id: 3, text: "Voice Chatbot Test", completed: false }
+  ],
+  game: {
     active: false,
-    workMinutes: 25,
-    breakMinutes: 5,
-    startedAt: null
+    score: 0
   }
 };
+
+// --- Server-side Authoritative Pomodoro Ticker (1 second) ---
+setInterval(() => {
+  if (state.pomodoro.state === 'RUNNING' || state.pomodoro.state === 'BREAK') {
+    if (state.pomodoro.timeLeft > 0) {
+      state.pomodoro.timeLeft--;
+    } else {
+      if (state.pomodoro.mode === 'WORK') {
+        state.pomodoro.sessionsCompleted++;
+        state.pomodoro.mode = 'BREAK';
+        state.pomodoro.state = 'BREAK';
+        state.pomodoro.timeLeft = state.pomodoro.breakDuration;
+      } else {
+        state.pomodoro.mode = 'WORK';
+        state.pomodoro.state = 'IDLE';
+        state.pomodoro.timeLeft = state.pomodoro.workDuration;
+      }
+    }
+  }
+}, 1000);
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -252,7 +283,7 @@ function handleDeepgramTTS(text, clientRes) {
 
   const req = https.request({
     hostname: 'api.deepgram.com',
-    path: `/v1/speak?model=${encodeURIComponent(model)}&encoding=linear16&container=wav&sample_rate=16000`,
+    path: `/v1/speak?model=${encodeURIComponent(model)}&encoding=linear16&container=wav&sample_rate=24000`,
     method: 'POST',
     headers: {
       'Authorization': `Token ${config.DEEPGRAM_API_KEY}`,
@@ -262,12 +293,19 @@ function handleDeepgramTTS(text, clientRes) {
     timeout: 30000
   }, (deepgramRes) => {
     if (deepgramRes.statusCode >= 200 && deepgramRes.statusCode < 300) {
-      clientRes.writeHead(200, {
-        'Content-Type': 'audio/wav',
-        'Connection': 'close',
-        'Access-Control-Allow-Origin': '*'
+      const chunks = [];
+      deepgramRes.on('data', chunk => chunks.push(chunk));
+      deepgramRes.on('end', () => {
+        const fullWav = Buffer.concat(chunks);
+        console.log(`[Deepgram TTS] Audio generated: ${fullWav.length} bytes (24kHz linear16 WAV)`);
+        clientRes.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'Content-Length': fullWav.length,
+          'Connection': 'close',
+          'Access-Control-Allow-Origin': '*'
+        });
+        clientRes.end(fullWav);
       });
-      deepgramRes.pipe(clientRes);
     } else {
       let errData = '';
       deepgramRes.on('data', c => { errData += c; });
@@ -426,12 +464,25 @@ const server = http.createServer((req, res) => {
         }
         if (json.screen !== undefined) {
           state.screen.current = String(json.screen);
+          const s = state.screen.current.toLowerCase();
+          state.game.active = (s === 'game' || s === 'game_screen' || s === 'microracer');
+        }
+
+        // ESP32 quick action sync
+        if (json.pomoAction) {
+          if (json.pomoAction === 'start') {
+            state.pomodoro.state = state.pomodoro.mode === 'BREAK' ? 'BREAK' : 'RUNNING';
+          } else if (json.pomoAction === 'pause') {
+            state.pomodoro.state = 'PAUSED';
+          } else if (json.pomoAction === 'reset') {
+            state.pomodoro.state = 'IDLE';
+            state.pomodoro.mode = 'WORK';
+            state.pomodoro.timeLeft = state.pomodoro.workDuration;
+          }
         }
 
         state.sensors.lastTelemetryTime = Date.now();
         state.sensors.isLiveHardware = true;
-
-        console.log(`[Hardware Telemetry Received] Temp: ${state.sensors.temperatureC}°C, Press: ${state.sensors.pressureHpa} hPa, RSSI: ${state.wifi.rssi} dBm`);
 
         sendJson(res, 200, {
           ok: true,
@@ -440,10 +491,140 @@ const server = http.createServer((req, res) => {
             temperatureC: state.sensors.temperatureC,
             pressureHpa: state.sensors.pressureHpa,
             bmpAvailable: state.sensors.bmpAvailable
-          }
+          },
+          pomodoro: {
+            state: state.pomodoro.state,
+            mode: state.pomodoro.mode,
+            timeLeft: state.pomodoro.timeLeft,
+            sessionsCompleted: state.pomodoro.sessionsCompleted
+          },
+          todos: state.todos,
+          gameActive: state.game.active
         });
       } catch (err) {
         sendJson(res, 400, { ok: false, error: 'Invalid JSON payload' });
+      }
+    });
+    return;
+  }
+
+  // --- Pomodoro API ---
+  if (pathname === '/api/pomodoro' && req.method === 'GET') {
+    return sendJson(res, 200, {
+      state: state.pomodoro.state,
+      mode: state.pomodoro.mode,
+      timeLeft: state.pomodoro.timeLeft,
+      workMinutes: Math.floor(state.pomodoro.workDuration / 60),
+      breakMinutes: Math.floor(state.pomodoro.breakDuration / 60),
+      sessionsCompleted: state.pomodoro.sessionsCompleted
+    });
+  }
+
+  if (pathname === '/api/pomodoro' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body || '{}');
+        const action = json.action;
+
+        if (action === 'start') {
+          state.pomodoro.state = state.pomodoro.mode === 'BREAK' ? 'BREAK' : 'RUNNING';
+        } else if (action === 'pause') {
+          state.pomodoro.state = 'PAUSED';
+        } else if (action === 'reset') {
+          state.pomodoro.state = 'IDLE';
+          state.pomodoro.mode = 'WORK';
+          state.pomodoro.timeLeft = state.pomodoro.workDuration;
+        } else if (action === 'set') {
+          if (json.workMinutes) {
+            state.pomodoro.workDuration = Number(json.workMinutes) * 60;
+            if (state.pomodoro.state === 'IDLE' && state.pomodoro.mode === 'WORK') {
+              state.pomodoro.timeLeft = state.pomodoro.workDuration;
+            }
+          }
+          if (json.breakMinutes) {
+            state.pomodoro.breakDuration = Number(json.breakMinutes) * 60;
+            if (state.pomodoro.state === 'IDLE' && state.pomodoro.mode === 'BREAK') {
+              state.pomodoro.timeLeft = state.pomodoro.breakDuration;
+            }
+          }
+        }
+
+        return sendJson(res, 200, {
+          ok: true,
+          state: state.pomodoro.state,
+          mode: state.pomodoro.mode,
+          timeLeft: state.pomodoro.timeLeft,
+          workMinutes: Math.floor(state.pomodoro.workDuration / 60),
+          breakMinutes: Math.floor(state.pomodoro.breakDuration / 60),
+          sessionsCompleted: state.pomodoro.sessionsCompleted
+        });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON' });
+      }
+    });
+    return;
+  }
+
+  // --- To-Do API ---
+  if (pathname === '/api/todos' && req.method === 'GET') {
+    return sendJson(res, 200, state.todos);
+  }
+
+  if (pathname === '/api/todos' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body || '{}');
+        const text = (json.text || '').trim();
+        if (text) {
+          const nextId = state.todos.length > 0 ? Math.max(...state.todos.map(t => t.id || 0)) + 1 : 1;
+          state.todos.push({
+            id: nextId,
+            text: text.slice(0, 24),
+            completed: false
+          });
+        }
+        return sendJson(res, 200, { ok: true, todos: state.todos });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON' });
+      }
+    });
+    return;
+  }
+
+  if (pathname === '/api/todos/toggle' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body || '{}');
+        const id = Number(json.id);
+        const item = state.todos.find(t => t.id === id);
+        if (item) {
+          item.completed = !item.completed;
+        }
+        return sendJson(res, 200, { ok: true, todos: state.todos });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON' });
+      }
+    });
+    return;
+  }
+
+  if (pathname === '/api/todos/delete' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(body || '{}');
+        const id = Number(json.id);
+        state.todos = state.todos.filter(t => t.id !== id);
+        return sendJson(res, 200, { ok: true, todos: state.todos });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: 'Invalid JSON' });
       }
     });
     return;
@@ -472,7 +653,17 @@ const server = http.createServer((req, res) => {
         lastTelemetryTime: state.sensors.lastTelemetryTime
       },
       bluetooth: state.bluetooth,
-      chatbot: state.chatbot
+      chatbot: state.chatbot,
+      pomodoro: {
+        state: state.pomodoro.state,
+        mode: state.pomodoro.mode,
+        timeLeft: state.pomodoro.timeLeft,
+        workMinutes: Math.floor(state.pomodoro.workDuration / 60),
+        breakMinutes: Math.floor(state.pomodoro.breakDuration / 60),
+        sessionsCompleted: state.pomodoro.sessionsCompleted
+      },
+      todos: state.todos,
+      gameActive: state.game.active
     });
   }
 

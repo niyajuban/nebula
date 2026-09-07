@@ -56,14 +56,19 @@ bool longPressHandled = false;
 unsigned long touchStartTime = 0;
 unsigned long lastActivityTime = 0;
 
-bool todos[] = {false, false, false};
-const char* todoItems[] = {"Build CyberDeck", "Finish task", "Take a break"};
+struct TodoItem {
+  int id;
+  char text[22];
+  bool completed;
+};
+TodoItem todoList[6];
+int todoCount = 0;
 int todoSelected = 0;
 
-enum PomoState { POMO_READY, POMO_RUNNING, POMO_PAUSED, POMO_BREAK_PROMPT, POMO_BREAK_RUNNING };
-PomoState pomoState = POMO_READY;
-int workMinutes = 25, workSeconds = 0, breakMinutes = 5, breakSeconds = 0, sessionsCompleted = 0;
-unsigned long pomoPreviousMillis = 0;
+String pomoServerState = "IDLE"; // "IDLE", "RUNNING", "PAUSED", "BREAK"
+String pomoServerMode  = "WORK"; // "WORK", "BREAK"
+int pomoTimeLeft = 25 * 60;
+int sessionsCompleted = 0;
 
 enum GameState { GAME_READY, GAME_RUNNING, GAME_OVER };
 GameState gameState = GAME_READY;
@@ -206,8 +211,11 @@ void handleTouch() {
 void handleShortPress() {
   if (currentScreen == MAIN_MENU) selected = (selected + 1) % menuSize;
   else if (currentScreen == TODO_SCREEN) {
-    todos[todoSelected] = !todos[todoSelected];
-    todoSelected = (todoSelected + 1) % 3;
+    if (todoCount > 0) {
+      todoList[todoSelected].completed = !todoList[todoSelected].completed;
+      toggleTodoRemote(todoList[todoSelected].id);
+      todoSelected = (todoSelected + 1) % todoCount;
+    }
   } else if (currentScreen == POMODORO_SCREEN) handlePomodoroTouch();
   else if (currentScreen == GAME_SCREEN) handleGameTouch();
   else if (currentScreen == WEATHER_SCREEN) { lastSensorRead = 0; updateSensor(); }
@@ -218,7 +226,7 @@ void handleLongPress() {
   if (currentScreen == MAIN_MENU) {
     switch (selected) {
       case 0: currentScreen = TODO_SCREEN; break;
-      case 1: resetPomodoro(); currentScreen = POMODORO_SCREEN; break;
+      case 1: currentScreen = POMODORO_SCREEN; break;
       case 2: resetGame(); currentScreen = GAME_SCREEN; break;
       case 3: currentScreen = WEATHER_SCREEN; break;
       case 4: currentScreen = CHATBOT_SCREEN; startChatbotHardware(); break;
@@ -411,12 +419,9 @@ bool playTts(const String& text) {
     return false;
   }
   int totalBytes = http.getSize();
-  if (totalBytes <= 44) {
-    Serial.println("TTS response too short");
-    http.end();
-    return false;
-  }
   WiFiClient* stream = http.getStreamPtr();
+  if (!stream) { http.end(); return false; }
+
   uint8_t header[44];
   size_t received = 0;
   while (received < sizeof(header)) {
@@ -429,18 +434,35 @@ bool playTts(const String& text) {
     http.end();
     return false;
   }
+
+  Serial.printf("TTS WAV header valid. Streaming to I2S speaker (%d bytes)...\n", totalBytes);
+
   uint8_t audio[1024];
-  int remaining = totalBytes - 44;
-  while (remaining > 0) {
-    int wanted = min((int)sizeof(audio), remaining);
-    int n = stream->readBytes(audio, wanted);
-    if (n <= 0) break;
-    ttsI2S.write(audio, n);
-    remaining -= n;
+  int remaining = (totalBytes > 44) ? (totalBytes - 44) : -1;
+  size_t totalAudioWritten = 0;
+
+  if (remaining > 0) {
+    while (remaining > 0) {
+      int wanted = min((int)sizeof(audio), remaining);
+      int n = stream->readBytes(audio, wanted);
+      if (n <= 0) break;
+      ttsI2S.write(audio, n);
+      totalAudioWritten += n;
+      remaining -= n;
+    }
+  } else {
+    while (stream->connected() || stream->available()) {
+      int n = stream->readBytes(audio, sizeof(audio));
+      if (n <= 0) break;
+      ttsI2S.write(audio, n);
+      totalAudioWritten += n;
+    }
   }
+
   ttsI2S.flush();
   http.end();
-  return remaining == 0;
+  Serial.printf("TTS audio complete: wrote %u bytes.\n", totalAudioWritten);
+  return totalAudioWritten > 0;
 }
 
 void runVoiceTurn() {
@@ -483,7 +505,7 @@ void runVoiceTurn() {
 unsigned long lastTelemetrySync = 0;
 void sendTelemetry() {
   if (WiFi.status() != WL_CONNECTED) return;
-  if (millis() - lastTelemetrySync < 4000) return;
+  if (millis() - lastTelemetrySync < 3000) return;
   lastTelemetrySync = millis();
 
   HTTPClient http;
@@ -491,7 +513,7 @@ void sendTelemetry() {
   http.begin(String(SERVER) + "/api/telemetry");
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Connection", "close");
-  http.setTimeout(1500);
+  http.setTimeout(2500);
 
   StaticJsonDocument<256> doc;
   doc["temperatureC"] = temperature;
@@ -499,12 +521,74 @@ void sendTelemetry() {
   doc["bmpAvailable"] = bmpAvailable;
   doc["rssi"]         = WiFi.RSSI();
   doc["freeHeap"]     = ESP.getFreeHeap();
-  if (selected >= 0 && selected < menuSize) {
-    doc["screen"] = menu[selected];
-  }
+
+  if (currentScreen == GAME_SCREEN) doc["screen"] = "GAME";
+  else if (currentScreen == TODO_SCREEN) doc["screen"] = "TODO";
+  else if (currentScreen == POMODORO_SCREEN) doc["screen"] = "POMODORO";
+  else if (currentScreen == WEATHER_SCREEN) doc["screen"] = "WEATHER";
+  else if (currentScreen == CHATBOT_SCREEN) doc["screen"] = "CHATBOT";
+  else if (currentScreen == SCREENSAVER) doc["screen"] = "SCREENSAVER";
+  else doc["screen"] = "MAIN_MENU";
 
   String payload;
   serializeJson(doc, payload);
+  int code = http.POST(payload);
+  if (code == 200) {
+    String response = http.getString();
+    DynamicJsonDocument respDoc(1536);
+    if (!deserializeJson(respDoc, response)) {
+      if (respDoc.containsKey("pomodoro")) {
+        JsonObject p = respDoc["pomodoro"];
+        pomoServerState = p["state"] | "IDLE";
+        pomoServerMode  = p["mode"] | "WORK";
+        pomoTimeLeft    = p["timeLeft"] | 1500;
+        sessionsCompleted = p["sessionsCompleted"] | 0;
+      }
+      if (respDoc.containsKey("todos")) {
+        JsonArray tArr = respDoc["todos"].as<JsonArray>();
+        todoCount = 0;
+        for (JsonObject item : tArr) {
+          if (todoCount >= 6) break;
+          todoList[todoCount].id = item["id"] | 0;
+          const char* txt = item["text"] | "";
+          strncpy(todoList[todoCount].text, txt, 21);
+          todoList[todoCount].text[21] = '\0';
+          todoList[todoCount].completed = item["completed"] | false;
+          todoCount++;
+        }
+        if (todoSelected >= todoCount && todoCount > 0) todoSelected = 0;
+      }
+    }
+  }
+  http.end();
+}
+
+void toggleTodoRemote(int id) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  HTTPClient http;
+  http.setReuse(false);
+  http.begin(String(SERVER) + "/api/todos/toggle");
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(2000);
+  StaticJsonDocument<64> req;
+  req["id"] = id;
+  String payload;
+  serializeJson(req, payload);
+  http.POST(payload);
+  http.end();
+}
+
+void sendPomoActionRemote(const char* act) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  HTTPClient http;
+  http.setReuse(false);
+  http.begin(String(SERVER) + "/api/pomodoro");
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(2000);
+  StaticJsonDocument<64> req;
+  req["action"] = act;
+  String payload;
+  serializeJson(req, payload);
   http.POST(payload);
   http.end();
 }
@@ -545,13 +629,27 @@ void drawMainMenu() {
 
 void drawTodo() {
   drawHeader("TO-DO");
-  for (int i = 0; i < 3; i++) {
-    int y = 17 + i * 12;
-    if (i == todoSelected) { display.fillRect(0, y - 1, 128, 10, WHITE); display.setTextColor(BLACK); }
-    else display.setTextColor(WHITE);
-    display.setCursor(2, y);
-    display.print(todos[i] ? "[x] " : "[ ] ");
-    display.print(todoItems[i]);
+  if (todoCount == 0) {
+    display.setCursor(14, 25);
+    display.println("No tasks yet!");
+    display.setCursor(2, 38);
+    display.println("Add task on Dash");
+  } else {
+    int startIdx = 0;
+    if (todoSelected >= 3) startIdx = todoSelected - 2;
+    for (int i = 0; i < 3 && (startIdx + i) < todoCount; i++) {
+      int idx = startIdx + i;
+      int y = 16 + i * 13;
+      if (idx == todoSelected) {
+        display.fillRect(0, y - 1, 128, 11, WHITE);
+        display.setTextColor(BLACK);
+      } else {
+        display.setTextColor(WHITE);
+      }
+      display.setCursor(2, y);
+      display.print(todoList[idx].completed ? "[x] " : "[ ] ");
+      display.print(todoList[idx].text);
+    }
   }
   display.setTextColor(WHITE);
   display.setCursor(0, 55);
@@ -568,46 +666,42 @@ void drawTomato(int x, int y) {
   display.drawLine(x, y - 4, x + 3, y - 5, WHITE);
 }
 
-void resetPomodoro() {
-  pomoState = POMO_READY; workMinutes = 25; workSeconds = 0; breakMinutes = 5; breakSeconds = 0;
-  sessionsCompleted = 0; pomoPreviousMillis = millis();
-}
-
 void handlePomodoroTouch() {
-  if (pomoState == POMO_BREAK_PROMPT) { breakMinutes = 5; breakSeconds = 0; pomoPreviousMillis = millis(); pomoState = POMO_BREAK_RUNNING; }
-  else if (pomoState == POMO_READY) { pomoPreviousMillis = millis(); pomoState = POMO_RUNNING; }
-  else if (pomoState == POMO_RUNNING || pomoState == POMO_BREAK_RUNNING) pomoState = POMO_PAUSED;
-  else { pomoPreviousMillis = millis(); pomoState = POMO_RUNNING; }
+  if (pomoServerState == "RUNNING" || pomoServerState == "BREAK") {
+    pomoServerState = "PAUSED";
+    sendPomoActionRemote("pause");
+  } else {
+    pomoServerState = "RUNNING";
+    sendPomoActionRemote("start");
+  }
 }
 
 void drawPomodoro() {
-  unsigned long now = millis();
-  if (pomoState == POMO_RUNNING && now - pomoPreviousMillis >= 1000) {
-    pomoPreviousMillis = now;
-    if (workSeconds == 0) { if (workMinutes > 0) { workMinutes--; workSeconds = 59; } else { sessionsCompleted++; pomoState = POMO_BREAK_PROMPT; } }
-    else workSeconds--;
+  static unsigned long lastLocalPomoTick = 0;
+  if ((pomoServerState == "RUNNING" || pomoServerState == "BREAK") && millis() - lastLocalPomoTick >= 1000) {
+    lastLocalPomoTick = millis();
+    if (pomoTimeLeft > 0) pomoTimeLeft--;
   }
-  if (pomoState == POMO_BREAK_RUNNING && now - pomoPreviousMillis >= 1000) {
-    pomoPreviousMillis = now;
-    if (breakSeconds == 0) { if (breakMinutes > 0) { breakMinutes--; breakSeconds = 59; } else { workMinutes = 25; workSeconds = 0; pomoState = POMO_READY; } }
-    else breakSeconds--;
-  }
+
   drawHeader("POMODORO");
   display.setCursor(77, 0); display.print(sessionsCompleted); drawTomato(119, 5);
-  if (pomoState == POMO_BREAK_PROMPT) {
-    display.setCursor(11, 22); display.println("SESSION COMPLETE!");
-    display.setCursor(20, 36); display.println("Tap: 5 min break");
-    display.setCursor(0, 55); display.print("Hold = Back");
-  } else {
-    int mins = pomoState == POMO_BREAK_RUNNING ? breakMinutes : workMinutes;
-    int secs = pomoState == POMO_BREAK_RUNNING ? breakSeconds : workSeconds;
-    char timerText[6]; snprintf(timerText, sizeof(timerText), "%02d:%02d", mins, secs);
-    display.setTextSize(3); display.setCursor(18, 27); display.println(timerText);
+
+  int mins = pomoTimeLeft / 60;
+  int secs = pomoTimeLeft % 60;
+  char timerText[6]; snprintf(timerText, sizeof(timerText), "%02d:%02d", mins, secs);
+
+  if (pomoServerMode == "BREAK" || pomoServerState == "BREAK") {
+    display.setCursor(24, 18); display.println("BREAK TIME!");
+    display.setTextSize(2); display.setCursor(35, 31); display.println(timerText);
     display.setTextSize(1); display.setCursor(0, 55);
-    if (pomoState == POMO_READY) display.print("Tap = Start");
-    else if (pomoState == POMO_PAUSED) display.print("Paused");
-    else if (pomoState == POMO_BREAK_RUNNING) display.print("Break running");
-    else display.print("Running");
+    if (pomoServerState == "PAUSED") display.print("Paused   Hold:Back");
+    else display.print("Break Running");
+  } else {
+    display.setTextSize(3); display.setCursor(18, 22); display.println(timerText);
+    display.setTextSize(1); display.setCursor(0, 55);
+    if (pomoServerState == "RUNNING") display.print("Running  Hold:Back");
+    else if (pomoServerState == "PAUSED") display.print("Paused   Hold:Back");
+    else display.print("Tap:Start Hold:Back");
   }
   display.display();
 }

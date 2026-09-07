@@ -278,59 +278,50 @@ function goToMode(index) {
 }
 
 /* ====================================================
-   2. TO DO LIST (Dynamic)
+   2. TO DO LIST (Two-Way Server Synced)
 ==================================================== */
-function initTodoList() {
-  const saved = localStorage.getItem('nebula_todos');
-  if (saved) {
-    try {
-      state.todos = JSON.parse(saved);
-    } catch (e) {
-      state.todos = [];
-    }
-  }
+async function fetchTodos() {
+  try {
+    const res = await fetch('/api/todos');
+    if (!res.ok) return;
+    state.todos = await res.json();
+    renderTodos();
+  } catch (err) {}
+}
 
-  if (!state.todos || state.todos.length === 0) {
-    state.todos = [
-      { id: 1, text: 'This is an example of task #1', completed: true },
-      { id: 2, text: 'This is an example of task #2', completed: false },
-      { id: 3, text: 'This is an example of task #3', completed: true },
-      { id: 4, text: 'This is an example of task #4', completed: false },
-      { id: 5, text: 'This is an example of task #5', completed: false }
-    ];
-    saveTodos();
-  }
+function initTodoList() {
+  fetchTodos();
 
   const form = document.getElementById('todo-form');
   const input = document.getElementById('todo-input');
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
 
     playBlip(780, 'sine', 0.08);
 
-    state.todos.push({
-      id: Date.now(),
-      text: text,
-      completed: false
-    });
+    try {
+      const res = await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        state.todos = data.todos;
+        renderTodos();
+      }
+    } catch (err) {}
 
     input.value = '';
-    saveTodos();
-    renderTodos();
   });
-
-  renderTodos();
-}
-
-function saveTodos() {
-  localStorage.setItem('nebula_todos', JSON.stringify(state.todos));
 }
 
 function renderTodos() {
   const list = document.getElementById('todo-list');
+  if (!list) return;
   list.innerHTML = '';
 
   let remaining = 0;
@@ -378,26 +369,42 @@ function renderTodos() {
     list.appendChild(row);
   });
 
-  document.getElementById('todo-count').textContent = remaining;
+  const countEl = document.getElementById('todo-count');
+  if (countEl) countEl.textContent = remaining;
 }
 
-function toggleTodo(id) {
-  const item = state.todos.find(t => t.id === id);
-  if (item) {
-    item.completed = !item.completed;
-    saveTodos();
-    renderTodos();
-  }
+async function toggleTodo(id) {
+  try {
+    const res = await fetch('/api/todos/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      state.todos = data.todos;
+      renderTodos();
+    }
+  } catch (err) {}
 }
 
-function deleteTodo(id) {
-  state.todos = state.todos.filter(t => t.id !== id);
-  saveTodos();
-  renderTodos();
+async function deleteTodo(id) {
+  try {
+    const res = await fetch('/api/todos/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      state.todos = data.todos;
+      renderTodos();
+    }
+  } catch (err) {}
 }
 
 /* ====================================================
-   3. POMODORO TIMER (Dynamic)
+   3. POMODORO TIMER (Two-Way Server Synced)
 ==================================================== */
 function initPomodoro() {
   const startBtn = document.getElementById('pomo-start-btn');
@@ -405,95 +412,101 @@ function initPomodoro() {
   const tabs = document.querySelectorAll('.pomo-tab');
 
   tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
+    tab.addEventListener('click', async () => {
       playBlip(540, 'sine', 0.06);
-      if (state.pomo.isRunning) {
-        pausePomodoro();
-      }
       tabs.forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
 
       const mode = tab.dataset.mode;
       const minutes = parseInt(tab.dataset.time, 10);
-      state.pomo.mode = mode;
-      state.pomo.secondsLeft = minutes * 60;
-      updatePomoDisplay();
-
-      const label = document.getElementById('pomo-status-label');
+      
       if (mode === 'pomodoro') {
-        label.textContent = `#${state.pomo.round} Time to focus!`;
+        await sendPomoAction('set', { workMinutes: minutes });
       } else {
-        label.textContent = 'Time for a break!';
+        await sendPomoAction('set', { breakMinutes: minutes });
       }
     });
   });
 
-  startBtn.addEventListener('click', () => {
+  startBtn.addEventListener('click', async () => {
     playBlip(700, 'triangle', 0.09);
-    if (state.pomo.isRunning) {
-      pausePomodoro();
+    const isRunning = state.pomo.serverState === 'RUNNING' || state.pomo.serverState === 'BREAK';
+    if (isRunning) {
+      await sendPomoAction('pause');
     } else {
-      startPomodoro();
+      await sendPomoAction('start');
     }
   });
 
-  resetBtn.addEventListener('click', () => {
+  resetBtn.addEventListener('click', async () => {
     playBlip(380, 'sine', 0.06);
-    pausePomodoro();
-    const curMode = state.pomo.mode;
-    state.pomo.secondsLeft = state.pomo.durations[curMode];
-    updatePomoDisplay();
+    await sendPomoAction('reset');
   });
 
-  updatePomoDisplay();
+  fetchPomodoro();
 }
 
-function startPomodoro() {
-  state.pomo.isRunning = true;
-  const startBtn = document.getElementById('pomo-start-btn');
-  startBtn.textContent = 'PAUSE';
-
-  sendCommand('startPomodoro', {
-    workMinutes: Math.floor(state.pomo.durations.pomodoro / 60),
-    breakMinutes: Math.floor(state.pomo.durations.shortBreak / 60)
-  });
-
-  state.pomo.intervalId = setInterval(() => {
-    if (state.pomo.secondsLeft > 0) {
-      state.pomo.secondsLeft--;
-      updatePomoDisplay();
-    } else {
-      handlePomoComplete();
+async function sendPomoAction(action, extra = {}) {
+  try {
+    const res = await fetch('/api/pomodoro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...extra })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      applyPomodoroState(data);
     }
-  }, 1000);
+  } catch (err) {}
 }
 
-function pausePomodoro() {
-  state.pomo.isRunning = false;
-  clearInterval(state.pomo.intervalId);
-  const startBtn = document.getElementById('pomo-start-btn');
-  startBtn.textContent = 'START';
+async function fetchPomodoro() {
+  try {
+    const res = await fetch('/api/pomodoro');
+    if (!res.ok) return;
+    const data = await res.json();
+    applyPomodoroState(data);
+  } catch (err) {}
 }
 
-function updatePomoDisplay() {
+function applyPomodoroState(data) {
+  if (!data) return;
+  state.pomo.serverState = data.state; // 'IDLE', 'RUNNING', 'PAUSED', 'BREAK'
+  state.pomo.mode = data.mode;
+  state.pomo.secondsLeft = data.timeLeft !== undefined ? data.timeLeft : 1500;
+  state.pomo.round = (data.sessionsCompleted || 0) + 1;
+
+  // Update clock display
   const total = state.pomo.secondsLeft;
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  document.getElementById('pomo-timer-display').textContent = formatted;
-}
+  const display = document.getElementById('pomo-timer-display');
+  if (display) display.textContent = formatted;
 
-function handlePomoComplete() {
-  pausePomodoro();
-  playChime();
+  // Update Start/Pause button
+  const startBtn = document.getElementById('pomo-start-btn');
+  if (startBtn) {
+    if (data.state === 'RUNNING' || data.state === 'BREAK') {
+      startBtn.textContent = 'PAUSE';
+    } else if (data.state === 'PAUSED') {
+      startBtn.textContent = 'RESUME';
+    } else {
+      startBtn.textContent = 'START';
+    }
+  }
 
-  if (state.pomo.mode === 'pomodoro') {
-    state.pomo.round++;
-    alert('🎉 Pomodoro session complete! Take a break.');
-    document.querySelector('.pomo-tab[data-mode="shortBreak"]').click();
+  // Update label & active tab
+  const label = document.getElementById('pomo-status-label');
+  const tabs = document.querySelectorAll('.pomo-tab');
+  if (data.mode === 'BREAK' || data.state === 'BREAK') {
+    if (label) label.textContent = '☕ Break in progress!';
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.mode === 'shortBreak'));
   } else {
-    alert('⏰ Break finished! Ready to focus?');
-    document.querySelector('.pomo-tab[data-mode="pomodoro"]').click();
+    if (label) {
+      label.textContent = data.state === 'PAUSED' ? `#${state.pomo.round} Paused` : `#${state.pomo.round} Time to focus!`;
+    }
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.mode === 'pomodoro'));
   }
 }
 
@@ -611,6 +624,40 @@ async function fetchUIState() {
   } catch (err) {}
 }
 
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // Game Mode Active Detection
+    const gameHeadline = document.getElementById('game-headline');
+    const gameSubtext = document.getElementById('game-subtext');
+    const gameDot = document.getElementById('game-status-dot');
+    const gameStatusText = document.getElementById('game-status-text');
+
+    if (gameHeadline && gameDot) {
+      if (data.gameActive) {
+        gameHeadline.textContent = 'Game Mode Active';
+        if (gameSubtext) gameSubtext.textContent = 'Micro Racer running on CyberDeck OLED • Controls engaged';
+        gameDot.className = 'status-dot green';
+        if (gameStatusText) gameStatusText.textContent = '🟢 Active • Direct hardware link engaged';
+      } else {
+        gameHeadline.textContent = 'Game Mode Inactive';
+        const scr = data.screen && data.screen.current ? data.screen.current : 'Standby';
+        if (gameSubtext) gameSubtext.textContent = `Hardware controller is on ${scr} • Open "Game" on CyberDeck OLED`;
+        gameDot.className = 'status-dot orange';
+        if (gameStatusText) gameStatusText.textContent = '⚪ Standby • Waiting for CyberDeck console';
+      }
+    }
+
+    // Pomodoro Sync
+    if (data.pomodoro) {
+      applyPomodoroState(data.pomodoro);
+    }
+  } catch (err) {}
+}
+
 /* ====================================================
    6. INITIALIZATION
 ==================================================== */
@@ -623,7 +670,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   fetchSensors();
   fetchUIState();
+  fetchStatus();
 
-  setInterval(fetchSensors, 5000);
-  setInterval(fetchUIState, 4000);
+  setInterval(fetchSensors, 4000);
+  setInterval(fetchUIState, 3000);
+  setInterval(fetchStatus, 1500); // Fast 1.5s sync for Pomodoro timer & Game state
+  setInterval(fetchTodos, 3500);  // 3.5s sync for To-Do list
 });
