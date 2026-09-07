@@ -5,8 +5,8 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_BMP085.h>
 
-const char* WIFI_SSID = "IceApple";
-const char* WIFI_PASSWORD = "123456789";
+const char* WIFI_SSID = "<wifi name>";
+const char* WIFI_PASSWORD = "<wifi password>";
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
