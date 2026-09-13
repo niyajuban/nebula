@@ -15,8 +15,8 @@ const char* SERVER = "http://<INSERT_YOUR_IPADDRESS>:3000";
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_ADDRESS 0x3C
-#define SDA_PIN 4
-#define SCL_PIN 15
+#define SDA_PIN 21
+#define SCL_PIN 22
 #define TOUCH_PIN 13
 #define TOUCH_ACTIVE HIGH
 
