@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg-pure-black: #000000;
   --bg-chassis: rgba(10, 10, 14, 0.94);
   --bg-screen: rgba(14, 14, 19, 0.98);
@@ -578,132 +578,7 @@ body {
 }
 
 /* ----------------------------------------------------
-   3. MUSIC CONTROL (Static - Bluetooth)
----------------------------------------------------- */
-.music-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  text-align: center;
-}
-
-.music-status-card {
-  display: flex;
-  align-items: center;
-  gap: 1.2rem;
-  background: var(--bg-item);
-  padding: 1.15rem 2.2rem;
-  border-radius: 20px;
-  border: 1px solid rgba(216, 180, 254, 0.12);
-  margin-bottom: 2rem;
-}
-
-.music-beacon {
-  position: relative;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--lilac-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--lilac-primary);
-}
-
-.beacon-pulse {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  border: 1.5px solid var(--lilac-primary);
-  animation: beaconWave 2s infinite ease-out;
-}
-
-@keyframes beaconWave {
-  0% { transform: scale(1); opacity: 0.8; }
-  100% { transform: scale(1.6); opacity: 0; }
-}
-
-.music-status-text { text-align: left; }
-.music-state-title { font-size: 1.15rem; font-weight: 700; color: var(--text-pure); }
-.music-state-sub { font-size: 0.88rem; font-weight: 500; color: var(--lilac-primary); margin-top: 2px; }
-
-.music-visualizer {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 48px;
-  margin-bottom: 2rem;
-}
-
-.music-visualizer .bar {
-  width: 5px;
-  background: var(--lilac-primary);
-  border-radius: 999px;
-  animation: soundBars 1.2s infinite ease-in-out;
-}
-
-.music-visualizer.paused .bar {
-  height: 6px !important;
-  animation: none !important;
-  opacity: 0.4;
-}
-
-.bar-1 { height: 16px; animation-delay: 0.1s; }
-.bar-2 { height: 34px; animation-delay: 0.3s; }
-.bar-3 { height: 24px; animation-delay: 0.15s; }
-.bar-4 { height: 40px; animation-delay: 0.45s; }
-.bar-5 { height: 30px; animation-delay: 0.2s; }
-.bar-6 { height: 42px; animation-delay: 0.5s; }
-.bar-7 { height: 26px; animation-delay: 0.25s; }
-.bar-8 { height: 15px; animation-delay: 0.35s; }
-
-@keyframes soundBars {
-  0%, 100% { height: 8px; }
-  50% { height: 44px; }
-}
-
-.music-controls {
-  display: flex;
-  align-items: center;
-  gap: 1.6rem;
-}
-
-.music-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-}
-
-.music-btn.primary {
-  width: 78px;
-  height: 78px;
-  background: var(--lilac-primary);
-  color: #0b0b10;
-  box-shadow: 0 8px 25px var(--lilac-glow);
-}
-
-.music-btn.primary:hover {
-  background: #ffffff;
-}
-
-.music-btn.secondary {
-  width: 56px;
-  height: 56px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-}
-
-.music-btn.secondary:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--text-pure);
-}
-
-/* ----------------------------------------------------
-   4. GAME MODE (Console Logo)
+   3. GAME MODE (Console Logo)
 ---------------------------------------------------- */
 .game-wrapper {
   display: flex;
@@ -800,10 +675,10 @@ body {
 
 .weather-metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1.2rem;
   width: 100%;
-  max-width: 520px;
+  max-width: 720px;
   margin-bottom: 1.6rem;
 }
 
