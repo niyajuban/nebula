@@ -5,12 +5,11 @@
 #include <ArduinoJson.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Adafruit_BMP085.h>
 #include "AudioTools.h"
 
-const char* WIFI_SSID = "YOUR_SSID";
-const char* WIFI_PASSWORD = "YOUR_PASSWORD";
-const char* SERVER = "http://<INSERT_YOUR_IPADDRESS>:3000";
+const char* WIFI_SSID = "your-hotspot";
+const char* WIFI_PASSWORD = "password";
+const char* SERVER = "http://ip:3000";
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -30,7 +29,6 @@ const char* SERVER = "http://<INSERT_YOUR_IPADDRESS>:3000";
 #define LONG_PRESS_TIME 800UL
 #define IDLE_TIME 30000UL
 #define SENSOR_INTERVAL 2000UL
-#define BMP_RETRY_INTERVAL 5000UL
 #define GAME_INTERVAL 90UL
 #define CAT_FRAME_TIME 500UL
 #define MIC_SAMPLE_RATE 16000
@@ -40,7 +38,6 @@ const char* SERVER = "http://<INSERT_YOUR_IPADDRESS>:3000";
 #define WAV_BYTES (44 + PCM_SAMPLES * 2)
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-Adafruit_BMP085 bmp;
 I2SStream micI2S;
 I2SStream ttsI2S;
 
@@ -77,9 +74,12 @@ const int RACER_LANE_X[RACER_LANES] = {28, 64, 100};
 int racerPlayerLane = 1, racerObstacleLane = 0, racerObstacleY = 14, racerScore = 0, racerSpeed = 3;
 unsigned long lastGameUpdate = 0;
 
-bool bmpAvailable = false;
+bool weatherAvailable = false;
 float temperature = 0.0f, pressure = 0.0f;
-unsigned long lastSensorRead = 0, lastBmpRetry = 0;
+int humidity = 0;
+char weatherCondition[18] = "Syncing...";
+unsigned long lastTelemetrySync = 0;
+unsigned long telemetryInterval = 8000;
 
 uint8_t* wavBuffer = nullptr;
 bool micReady = false, ttsReady = false;
@@ -165,8 +165,7 @@ void setup() {
   display.display();
   delay(900);
 
-  bmpAvailable = bmp.begin();
-  Serial.println(bmpAvailable ? "BMP180 detected" : "BMP180 not detected");
+  Serial.println("Weather API Mode: Open-Meteo Sync");
   connectWiFi();
   currentScreen = SCREENSAVER;
   lastActivityTime = millis();
@@ -218,7 +217,7 @@ void handleShortPress() {
     }
   } else if (currentScreen == POMODORO_SCREEN) handlePomodoroTouch();
   else if (currentScreen == GAME_SCREEN) handleGameTouch();
-  else if (currentScreen == WEATHER_SCREEN) { lastSensorRead = 0; updateSensor(); }
+  else if (currentScreen == WEATHER_SCREEN) { lastTelemetrySync = 0; telemetryInterval = 0; }
   else if (currentScreen == CHATBOT_SCREEN) runVoiceTurn();
 }
 
@@ -502,10 +501,9 @@ void runVoiceTurn() {
   drawChatbot();
 }
 
-unsigned long lastTelemetrySync = 0;
 void sendTelemetry() {
   if (WiFi.status() != WL_CONNECTED) return;
-  if (millis() - lastTelemetrySync < 3000) return;
+  if (millis() - lastTelemetrySync < telemetryInterval) return;
   lastTelemetrySync = millis();
 
   HTTPClient http;
@@ -513,14 +511,11 @@ void sendTelemetry() {
   http.begin(String(SERVER) + "/api/telemetry");
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Connection", "close");
-  http.setTimeout(2500);
+  http.setTimeout(700); // 700ms tight timeout prevents UI freezing
 
   StaticJsonDocument<256> doc;
-  doc["temperatureC"] = temperature;
-  doc["pressureHpa"]  = pressure;
-  doc["bmpAvailable"] = bmpAvailable;
-  doc["rssi"]         = WiFi.RSSI();
-  doc["freeHeap"]     = ESP.getFreeHeap();
+  doc["rssi"]     = WiFi.RSSI();
+  doc["freeHeap"] = ESP.getFreeHeap();
 
   if (currentScreen == GAME_SCREEN) doc["screen"] = "GAME";
   else if (currentScreen == TODO_SCREEN) doc["screen"] = "TODO";
@@ -534,6 +529,7 @@ void sendTelemetry() {
   serializeJson(doc, payload);
   int code = http.POST(payload);
   if (code == 200) {
+    telemetryInterval = 8000; // normal 8-second refresh
     String response = http.getString();
     DynamicJsonDocument respDoc(1536);
     if (!deserializeJson(respDoc, response)) {
@@ -558,7 +554,23 @@ void sendTelemetry() {
         }
         if (todoSelected >= todoCount && todoCount > 0) todoSelected = 0;
       }
+      if (respDoc.containsKey("weather")) {
+        JsonObject w = respDoc["weather"];
+        temperature = w["temp"] | temperature;
+        pressure    = w["pressure"] | pressure;
+        humidity    = w["humidity"] | humidity;
+        const char* cond = w["condition"] | "";
+        if (strlen(cond) > 0) {
+          strncpy(weatherCondition, cond, sizeof(weatherCondition) - 1);
+          weatherCondition[sizeof(weatherCondition) - 1] = '\0';
+        }
+        weatherAvailable = true;
+      }
     }
+  } else {
+    // If backend is unreachable or offline, BACK OFF for 30 seconds!
+    // This guarantees the ESP32 UI (cat animations, touch, OLED) never lags!
+    telemetryInterval = 30000;
   }
   http.end();
 }
@@ -594,17 +606,7 @@ void sendPomoActionRemote(const char* act) {
 }
 
 void updateSensor() {
-  if (!bmpAvailable) {
-    if (millis() - lastBmpRetry >= BMP_RETRY_INTERVAL) { lastBmpRetry = millis(); bmpAvailable = bmp.begin(); }
-    return;
-  }
-  if (millis() - lastSensorRead < SENSOR_INTERVAL) return;
-  lastSensorRead = millis();
-  float t = bmp.readTemperature();
-  float p = bmp.readPressure() / 100.0f;
-  if (isnan(t) || t < -40 || t > 85 || p < 300 || p > 1100) { bmpAvailable = false; lastBmpRetry = millis(); return; }
-  temperature = t;
-  pressure = p;
+  // Environmental telemetry is fetched via Open-Meteo API in sendTelemetry
 }
 
 void drawMainMenu() {
@@ -764,14 +766,31 @@ void drawGame() {
 }
 
 void drawWeather() {
-  drawHeader("ENVIRONMENT");
-  if (!bmpAvailable) display.setCursor(17, 28), display.println("BMP180 NOT FOUND");
-  else {
-    display.setCursor(2, 18); display.println("TEMP"); display.setTextSize(2); display.setCursor(2, 30);
-    display.print(temperature, 1); display.print("C"); display.setTextSize(1);
-    display.setCursor(78, 18); display.println("PRESSURE"); display.setCursor(78, 31); display.print(pressure, 0); display.println("hPa");
+  drawHeader("VELLORE WX");
+  if (!weatherAvailable) {
+    display.setCursor(15, 28);
+    display.println("SYNCING API WX...");
+  } else {
+    display.setCursor(2, 13);
+    display.setTextSize(2);
+    display.print(temperature, 1);
+    display.print("C");
+
+    display.setCursor(74, 13);
+    display.print(humidity);
+    display.print("%");
+    display.setTextSize(1);
+
+    display.setCursor(2, 32);
+    display.print("Baro: ");
+    display.print(pressure, 0);
+    display.print(" hPa");
+
+    display.setCursor(2, 43);
+    display.print(weatherCondition);
   }
-  display.setCursor(0, 55); display.print("Tap:Refresh Hold:Back");
+  display.setCursor(0, 55);
+  display.print("Tap:Refresh Hold:Back");
   display.display();
 }
 
