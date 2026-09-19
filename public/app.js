@@ -4,34 +4,29 @@
  */
 
 // Ordered Modes list
-const modesOrder = ['music', 'pomodoro', 'todo', 'game', 'weather', 'chatbot'];
+const modesOrder = ['todo', 'pomodoro', 'game', 'weather', 'chatbot'];
 
 const modeMeta = {
-  music: { num: 'MODE 1/6', title: 'Music Control' },
-  pomodoro: { num: 'MODE 2/6', title: 'Pomodoro Timer' },
-  todo: { num: 'MODE 3/6', title: 'To do List' },
-  game: { num: 'MODE 4/6', title: 'Game Mode' },
-  weather: { num: 'MODE 5/6', title: 'Weather' },
-  chatbot: { num: 'MODE 6/6', title: 'AI chatbot' }
+  todo: { num: 'MODE 1/5', title: 'To do List' },
+  pomodoro: { num: 'MODE 2/5', title: 'Pomodoro Timer' },
+  game: { num: 'MODE 3/5', title: 'Game Mode' },
+  weather: { num: 'MODE 4/5', title: 'Weather' },
+  chatbot: { num: 'MODE 5/5', title: 'AI chatbot' }
 };
 
 // Global State
 const state = {
-  currentModeIndex: 2, // Default to To do List (Index 2)
+  currentModeIndex: 0, // Default to To do List (Index 0)
   pomo: {
-    mode: 'pomodoro',
+    mode: 'study',
     durations: {
-      pomodoro: 25 * 60,
-      shortBreak: 5 * 60,
-      longBreak: 15 * 60
+      study: 25 * 60,
+      break: 5 * 60
     },
     secondsLeft: 25 * 60,
     isRunning: false,
     intervalId: null,
     round: 1
-  },
-  music: {
-    isPlaying: true
   },
   todos: []
 };
@@ -418,12 +413,10 @@ function initPomodoro() {
       tab.classList.add('active');
 
       const mode = tab.dataset.mode;
-      const minutes = parseInt(tab.dataset.time, 10);
-      
-      if (mode === 'pomodoro') {
-        await sendPomoAction('set', { workMinutes: minutes });
+      if (mode === 'break') {
+        await sendPomoAction('set', { mode: 'BREAK', breakMinutes: 5 });
       } else {
-        await sendPomoAction('set', { breakMinutes: minutes });
+        await sendPomoAction('set', { mode: 'WORK', workMinutes: 25 });
       }
     });
   });
@@ -472,8 +465,8 @@ async function fetchPomodoro() {
 function applyPomodoroState(data) {
   if (!data) return;
   state.pomo.serverState = data.state; // 'IDLE', 'RUNNING', 'PAUSED', 'BREAK'
-  state.pomo.mode = data.mode;
-  state.pomo.secondsLeft = data.timeLeft !== undefined ? data.timeLeft : 1500;
+  state.pomo.mode = data.mode; // 'WORK' or 'BREAK'
+  state.pomo.secondsLeft = data.timeLeft !== undefined ? data.timeLeft : (data.mode === 'BREAK' ? 300 : 1500);
   state.pomo.round = (data.sessionsCompleted || 0) + 1;
 
   // Update clock display
@@ -500,13 +493,15 @@ function applyPomodoroState(data) {
   const label = document.getElementById('pomo-status-label');
   const tabs = document.querySelectorAll('.pomo-tab');
   if (data.mode === 'BREAK' || data.state === 'BREAK') {
-    if (label) label.textContent = '☕ Break in progress!';
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.mode === 'shortBreak'));
+    if (label) {
+      label.textContent = data.state === 'PAUSED' ? '☕ Break Paused' : (data.state === 'RUNNING' || data.state === 'BREAK' ? '☕ Break Running' : '☕ Break Ready (5 min)');
+    }
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.mode === 'break'));
   } else {
     if (label) {
-      label.textContent = data.state === 'PAUSED' ? `#${state.pomo.round} Paused` : `#${state.pomo.round} Time to focus!`;
+      label.textContent = data.state === 'PAUSED' ? `#${state.pomo.round} Study Paused` : (data.state === 'RUNNING' ? `#${state.pomo.round} Focus Time (Study)` : `#${state.pomo.round} Time to focus!`);
     }
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.mode === 'pomodoro'));
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.mode === 'study' || t.dataset.mode === 'pomodoro'));
   }
 }
 
@@ -528,42 +523,7 @@ function playChime() {
 }
 
 /* ====================================================
-   4. MUSIC CONTROL (Static)
-==================================================== */
-function initMusic() {
-  const playBtn = document.getElementById('music-play-btn');
-  const iconPlay = document.getElementById('icon-play');
-  const iconPause = document.getElementById('icon-pause');
-  const visualizer = document.getElementById('music-visualizer');
-  const playingSub = document.getElementById('music-playing-sub');
-
-  state.music.isPlaying = true;
-  visualizer.classList.remove('paused');
-  iconPlay.style.display = 'none';
-  iconPause.style.display = 'block';
-
-  playBtn.addEventListener('click', () => {
-    playBlip(600, 'sine', 0.08);
-    state.music.isPlaying = !state.music.isPlaying;
-
-    if (state.music.isPlaying) {
-      iconPlay.style.display = 'none';
-      iconPause.style.display = 'block';
-      visualizer.classList.remove('paused');
-      playingSub.textContent = 'Music Playing';
-    } else {
-      iconPlay.style.display = 'block';
-      iconPause.style.display = 'none';
-      visualizer.classList.add('paused');
-      playingSub.textContent = 'Audio Standby / Paused';
-    }
-
-    sendCommand('toggleBluetoothPlayback', {});
-  });
-}
-
-/* ====================================================
-   5. BACKEND TELEMETRY
+   4. BACKEND TELEMETRY
 ==================================================== */
 async function sendCommand(command, params) {
   try {
@@ -592,15 +552,23 @@ async function fetchSensors() {
       const pressEl = document.getElementById('weather-pressure');
       if (pressEl) pressEl.textContent = Number(data.pressureHpa).toFixed(1);
     }
+    if (data.humidity !== undefined) {
+      const humEl = document.getElementById('weather-humidity');
+      if (humEl) humEl.textContent = Math.round(Number(data.humidity));
+    }
+    if (data.condition) {
+      const condEl = document.getElementById('weather-condition');
+      if (condEl) condEl.textContent = data.condition;
+    }
     const dotEl = document.getElementById('weather-sensor-dot');
     const textEl = document.getElementById('weather-sensor-status-text');
     if (dotEl && textEl) {
+      dotEl.className = 'status-dot green';
+      const city = data.city || 'Vellore';
       if (data.isLiveHardware) {
-        dotEl.className = 'status-dot green';
-        textEl.textContent = 'BMP180 Sensor: Live Hardware Sync (ESP32 Connected)';
+        textEl.textContent = `Open-Meteo API: Live Synced (${city}) • ESP32 Connected`;
       } else {
-        dotEl.className = 'status-dot yellow';
-        textEl.textContent = 'BMP180 Sensor: Standby (Awaiting ESP32 Telemetry)';
+        textEl.textContent = `Open-Meteo API: Live Synced (${city})`;
       }
     }
   } catch (err) {}
@@ -659,14 +627,13 @@ async function fetchStatus() {
 }
 
 /* ====================================================
-   6. INITIALIZATION
+   5. INITIALIZATION
 ==================================================== */
 document.addEventListener('DOMContentLoaded', () => {
   initSpaceCanvas();
   initNavigation();
   initTodoList();
   initPomodoro();
-  initMusic();
 
   fetchSensors();
   fetchUIState();
@@ -674,6 +641,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setInterval(fetchSensors, 4000);
   setInterval(fetchUIState, 3000);
-  setInterval(fetchStatus, 1500); // Fast 1.5s sync for Pomodoro timer & Game state
-  setInterval(fetchTodos, 3500);  // 3.5s sync for To-Do list
+  setInterval(fetchStatus, 1000); // 1.0s sync for Pomodoro timer & Game state
+  setInterval(fetchTodos, 2000);  // 2.0s sync for To-Do list
 });
