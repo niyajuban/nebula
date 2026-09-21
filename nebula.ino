@@ -1,22 +1,22 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <WiFiUdp.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Adafruit_BMP085.h>
 #include "AudioTools.h"
 
-const char* WIFI_SSID = "IceApple";
-const char* WIFI_PASSWORD = "123456789";
-const char* SERVER = "http://10.48.221.62:3000";
+const char* WIFI_SSID = "OnePlus 12R";
+const char* WIFI_PASSWORD = "12345678";
+const char* SERVER = "http://172.17.215.99:3000";
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_ADDRESS 0x3C
-#define SDA_PIN 4
-#define SCL_PIN 15
+#define SDA_PIN 21
+#define SCL_PIN 22
 #define TOUCH_PIN 13
 #define TOUCH_ACTIVE HIGH
 
@@ -30,7 +30,6 @@ const char* SERVER = "http://10.48.221.62:3000";
 #define LONG_PRESS_TIME 800UL
 #define IDLE_TIME 30000UL
 #define SENSOR_INTERVAL 2000UL
-#define BMP_RETRY_INTERVAL 5000UL
 #define GAME_INTERVAL 90UL
 #define CAT_FRAME_TIME 500UL
 #define MIC_SAMPLE_RATE 16000
@@ -40,7 +39,6 @@ const char* SERVER = "http://10.48.221.62:3000";
 #define WAV_BYTES (44 + PCM_SAMPLES * 2)
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-Adafruit_BMP085 bmp;
 I2SStream micI2S;
 I2SStream ttsI2S;
 
@@ -48,7 +46,14 @@ const char* menu[] = {"To-Do", "Pomodoro", "Game", "Weather", "ChatBot"};
 const int menuSize = 5;
 int selected = 0;
 
-enum Screen { MAIN_MENU, TODO_SCREEN, POMODORO_SCREEN, GAME_SCREEN, WEATHER_SCREEN, CHATBOT_SCREEN, SCREENSAVER };
+#define EVENT_UDP_PORT 4210
+WiFiUDP eventUdp;
+bool udpListening = false;
+bool isEventPlaying = false;
+Screen preEventScreen = SCREENSAVER;
+uint8_t eventVisualizerFrame = 0;
+
+enum Screen { MAIN_MENU, TODO_SCREEN, POMODORO_SCREEN, GAME_SCREEN, WEATHER_SCREEN, CHATBOT_SCREEN, SCREENSAVER, EVENT_SCREEN };
 Screen currentScreen = SCREENSAVER;
 
 bool previousTouch = false;
@@ -77,9 +82,12 @@ const int RACER_LANE_X[RACER_LANES] = {28, 64, 100};
 int racerPlayerLane = 1, racerObstacleLane = 0, racerObstacleY = 14, racerScore = 0, racerSpeed = 3;
 unsigned long lastGameUpdate = 0;
 
-bool bmpAvailable = false;
+bool weatherAvailable = false;
 float temperature = 0.0f, pressure = 0.0f;
-unsigned long lastSensorRead = 0, lastBmpRetry = 0;
+int humidity = 0;
+char weatherCondition[18] = "Syncing...";
+unsigned long lastTelemetrySync = 0;
+unsigned long telemetryInterval = 8000;
 
 uint8_t* wavBuffer = nullptr;
 bool micReady = false, ttsReady = false;
@@ -135,6 +143,15 @@ String askChatbot(const String& question);
 bool playTts(const String& text);
 void runVoiceTurn();
 bool isVoiceError(const String& value);
+void toggleTodoRemote(int id);
+void sendPomoActionRemote(const char* act);
+void checkEventSyncUDP();
+void startEventPlayback();
+void stopEventPlayback();
+void drawEventScreen();
+bool streamEventTrack();
+void playFallbackSynth();
+void ensureSpeakerReady();
 
 void drawHeader(const char* title) {
   display.clearDisplay();
@@ -165,18 +182,23 @@ void setup() {
   display.display();
   delay(900);
 
-  bmpAvailable = bmp.begin();
-  Serial.println(bmpAvailable ? "BMP180 detected" : "BMP180 not detected");
+  Serial.println("Weather API Mode: Open-Meteo Sync");
   connectWiFi();
+  if (WiFi.status() == WL_CONNECTED) {
+    eventUdp.begin(EVENT_UDP_PORT);
+    udpListening = true;
+    Serial.printf("UDP Event Sync listening on port %d\n", EVENT_UDP_PORT);
+  }
   currentScreen = SCREENSAVER;
   lastActivityTime = millis();
 }
 
 void loop() {
   handleTouch();
+  checkEventSyncUDP();
   updateSensor();
   sendTelemetry();
-  if (currentScreen != SCREENSAVER && millis() - lastActivityTime >= IDLE_TIME) {
+  if (currentScreen != SCREENSAVER && currentScreen != EVENT_SCREEN && millis() - lastActivityTime >= IDLE_TIME) {
     stopChatbotHardware();
     currentScreen = SCREENSAVER;
   }
@@ -218,11 +240,16 @@ void handleShortPress() {
     }
   } else if (currentScreen == POMODORO_SCREEN) handlePomodoroTouch();
   else if (currentScreen == GAME_SCREEN) handleGameTouch();
-  else if (currentScreen == WEATHER_SCREEN) { lastSensorRead = 0; updateSensor(); }
+  else if (currentScreen == WEATHER_SCREEN) { lastTelemetrySync = 0; telemetryInterval = 0; }
   else if (currentScreen == CHATBOT_SCREEN) runVoiceTurn();
+  else if (currentScreen == EVENT_SCREEN) stopEventPlayback();
 }
 
 void handleLongPress() {
+  if (currentScreen == EVENT_SCREEN) {
+    stopEventPlayback();
+    return;
+  }
   if (currentScreen == MAIN_MENU) {
     switch (selected) {
       case 0: currentScreen = TODO_SCREEN; break;
@@ -255,6 +282,11 @@ bool connectWiFi() {
   }
   Serial.print("Wi-Fi IP: ");
   Serial.println(WiFi.localIP());
+  if (!udpListening) {
+    eventUdp.begin(EVENT_UDP_PORT);
+    udpListening = true;
+    Serial.printf("UDP Event Sync listening on port %d\n", EVENT_UDP_PORT);
+  }
   return true;
 }
 
@@ -281,6 +313,13 @@ void startChatbotHardware() {
     micReady = micI2S.begin(mic);
   }
 
+  ensureSpeakerReady();
+
+  Serial.println(micReady ? "Mic ready" : "Mic failed");
+  chatbotReply = (micReady && ttsReady) ? "Tap to ask" : "Audio init failed";
+}
+
+void ensureSpeakerReady() {
   if (!ttsReady) {
     auto speaker = ttsI2S.defaultConfig(TX_MODE);
     speaker.port_no = I2S_NUM_0;
@@ -292,11 +331,8 @@ void startChatbotHardware() {
     speaker.channels = 1;
     speaker.i2s_format = I2S_STD_FORMAT;
     ttsReady = ttsI2S.begin(speaker);
+    Serial.println(ttsReady ? "Speaker ready" : "Speaker init failed");
   }
-
-  Serial.println(micReady ? "Mic ready" : "Mic failed");
-  Serial.println(ttsReady ? "Speaker ready" : "Speaker failed");
-  chatbotReply = (micReady && ttsReady) ? "Tap to ask" : "Audio init failed";
 }
 
 void stopChatbotHardware() {
@@ -502,10 +538,9 @@ void runVoiceTurn() {
   drawChatbot();
 }
 
-unsigned long lastTelemetrySync = 0;
 void sendTelemetry() {
   if (WiFi.status() != WL_CONNECTED) return;
-  if (millis() - lastTelemetrySync < 3000) return;
+  if (millis() - lastTelemetrySync < telemetryInterval) return;
   lastTelemetrySync = millis();
 
   HTTPClient http;
@@ -513,14 +548,11 @@ void sendTelemetry() {
   http.begin(String(SERVER) + "/api/telemetry");
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Connection", "close");
-  http.setTimeout(2500);
+  http.setTimeout(700); // 700ms tight timeout prevents UI freezing
 
   StaticJsonDocument<256> doc;
-  doc["temperatureC"] = temperature;
-  doc["pressureHpa"]  = pressure;
-  doc["bmpAvailable"] = bmpAvailable;
-  doc["rssi"]         = WiFi.RSSI();
-  doc["freeHeap"]     = ESP.getFreeHeap();
+  doc["rssi"]     = WiFi.RSSI();
+  doc["freeHeap"] = ESP.getFreeHeap();
 
   if (currentScreen == GAME_SCREEN) doc["screen"] = "GAME";
   else if (currentScreen == TODO_SCREEN) doc["screen"] = "TODO";
@@ -534,6 +566,7 @@ void sendTelemetry() {
   serializeJson(doc, payload);
   int code = http.POST(payload);
   if (code == 200) {
+    telemetryInterval = 8000; // normal 8-second refresh
     String response = http.getString();
     DynamicJsonDocument respDoc(1536);
     if (!deserializeJson(respDoc, response)) {
@@ -558,7 +591,32 @@ void sendTelemetry() {
         }
         if (todoSelected >= todoCount && todoCount > 0) todoSelected = 0;
       }
+      if (respDoc.containsKey("weather")) {
+        JsonObject w = respDoc["weather"];
+        temperature = w["temp"] | temperature;
+        pressure    = w["pressure"] | pressure;
+        humidity    = w["humidity"] | humidity;
+        const char* cond = w["condition"] | "";
+        if (strlen(cond) > 0) {
+          strncpy(weatherCondition, cond, sizeof(weatherCondition) - 1);
+          weatherCondition[sizeof(weatherCondition) - 1] = '\0';
+        }
+        weatherAvailable = true;
+      }
+      if (respDoc.containsKey("eventSync")) {
+        JsonObject ev = respDoc["eventSync"];
+        bool active = ev["active"] | false;
+        if (active && !isEventPlaying) {
+          startEventPlayback();
+        } else if (!active && isEventPlaying) {
+          stopEventPlayback();
+        }
+      }
     }
+  } else {
+    // If backend is unreachable or offline, BACK OFF for 30 seconds!
+    // This guarantees the ESP32 UI (cat animations, touch, OLED) never lags!
+    telemetryInterval = 30000;
   }
   http.end();
 }
@@ -594,17 +652,7 @@ void sendPomoActionRemote(const char* act) {
 }
 
 void updateSensor() {
-  if (!bmpAvailable) {
-    if (millis() - lastBmpRetry >= BMP_RETRY_INTERVAL) { lastBmpRetry = millis(); bmpAvailable = bmp.begin(); }
-    return;
-  }
-  if (millis() - lastSensorRead < SENSOR_INTERVAL) return;
-  lastSensorRead = millis();
-  float t = bmp.readTemperature();
-  float p = bmp.readPressure() / 100.0f;
-  if (isnan(t) || t < -40 || t > 85 || p < 300 || p > 1100) { bmpAvailable = false; lastBmpRetry = millis(); return; }
-  temperature = t;
-  pressure = p;
+  // Environmental telemetry is fetched via Open-Meteo API in sendTelemetry
 }
 
 void drawMainMenu() {
@@ -764,14 +812,31 @@ void drawGame() {
 }
 
 void drawWeather() {
-  drawHeader("ENVIRONMENT");
-  if (!bmpAvailable) display.setCursor(17, 28), display.println("BMP180 NOT FOUND");
-  else {
-    display.setCursor(2, 18); display.println("TEMP"); display.setTextSize(2); display.setCursor(2, 30);
-    display.print(temperature, 1); display.print("C"); display.setTextSize(1);
-    display.setCursor(78, 18); display.println("PRESSURE"); display.setCursor(78, 31); display.print(pressure, 0); display.println("hPa");
+  drawHeader("VELLORE WX");
+  if (!weatherAvailable) {
+    display.setCursor(15, 28);
+    display.println("SYNCING API WX...");
+  } else {
+    display.setCursor(2, 13);
+    display.setTextSize(2);
+    display.print(temperature, 1);
+    display.print("C");
+
+    display.setCursor(74, 13);
+    display.print(humidity);
+    display.print("%");
+    display.setTextSize(1);
+
+    display.setCursor(2, 32);
+    display.print("Baro: ");
+    display.print(pressure, 0);
+    display.print(" hPa");
+
+    display.setCursor(2, 43);
+    display.print(weatherCondition);
   }
-  display.setCursor(0, 55); display.print("Tap:Refresh Hold:Back");
+  display.setCursor(0, 55);
+  display.print("Tap:Refresh Hold:Back");
   display.display();
 }
 
@@ -791,6 +856,7 @@ void drawScreen() {
     case WEATHER_SCREEN: drawWeather(); break;
     case CHATBOT_SCREEN: drawChatbot(); break;
     case SCREENSAVER: drawScreensaver(); break;
+    case EVENT_SCREEN: drawEventScreen(); break;
   }
 }
 
@@ -877,4 +943,186 @@ void printWrappedText(const String& text, int y, int maxLines) {
     start = end;
     while (start < text.length() && text.charAt(start) == ' ') start++;
   }
+}
+
+/* ====================================================
+   EVENT SYNC AUDIO & VISUALIZER (Method 2)
+==================================================== */
+
+void checkEventSyncUDP() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (!udpListening) {
+    eventUdp.begin(EVENT_UDP_PORT);
+    udpListening = true;
+  }
+
+  int packetSize = eventUdp.parsePacket();
+  if (packetSize > 0) {
+    char packetBuffer[32];
+    int len = eventUdp.read(packetBuffer, sizeof(packetBuffer) - 1);
+    if (len > 0) {
+      packetBuffer[len] = '\0';
+      Serial.printf("[Event UDP] Received packet: %s\n", packetBuffer);
+      if (strcmp(packetBuffer, "PLAY") == 0) {
+        if (!isEventPlaying) startEventPlayback();
+      } else if (strcmp(packetBuffer, "STOP") == 0) {
+        if (isEventPlaying) stopEventPlayback();
+      }
+    }
+  }
+}
+
+void startEventPlayback() {
+  if (isEventPlaying) return;
+  isEventPlaying = true;
+  if (currentScreen != EVENT_SCREEN) preEventScreen = currentScreen;
+  currentScreen = EVENT_SCREEN;
+  lastActivityTime = millis();
+  ensureSpeakerReady();
+  drawEventScreen();
+
+  Serial.println("🎉 [Event Sync] Starting synchronized audio playback!");
+  streamEventTrack();
+}
+
+void stopEventPlayback() {
+  isEventPlaying = false;
+  if (currentScreen == EVENT_SCREEN) {
+    currentScreen = (preEventScreen != EVENT_SCREEN) ? preEventScreen : MAIN_MENU;
+  }
+  lastActivityTime = millis();
+  Serial.println("🛑 [Event Sync] Stopped audio playback");
+}
+
+bool streamEventTrack() {
+  if (!ttsReady || !connectWiFi()) {
+    playFallbackSynth();
+    return false;
+  }
+
+  HTTPClient http;
+  http.setReuse(false);
+  http.begin(String(SERVER) + "/api/event/track");
+  http.setTimeout(15000);
+  int code = http.GET();
+  if (code != 200) {
+    Serial.printf("[Event Audio] Track GET failed HTTP %d. Playing fallback synth.\n", code);
+    http.end();
+    playFallbackSynth();
+    return false;
+  }
+
+  int totalBytes = http.getSize();
+  WiFiClient* stream = http.getStreamPtr();
+  if (!stream) { http.end(); playFallbackSynth(); return false; }
+
+  // Skip 44-byte WAV header
+  uint8_t header[44];
+  size_t received = 0;
+  while (received < sizeof(header)) {
+    int n = stream->readBytes(header + received, sizeof(header) - received);
+    if (n <= 0) { http.end(); playFallbackSynth(); return false; }
+    received += n;
+  }
+
+  uint8_t audio[1024];
+  int remaining = (totalBytes > 44) ? (totalBytes - 44) : -1;
+  unsigned long lastAnim = 0;
+
+  while (isEventPlaying && (remaining > 0 || remaining == -1)) {
+    // Touch button interrupts playback
+    if (digitalRead(TOUCH_PIN) == TOUCH_ACTIVE) {
+      delay(150);
+      stopEventPlayback();
+      break;
+    }
+
+    // UDP STOP command interrupts playback
+    int pSize = eventUdp.parsePacket();
+    if (pSize > 0) {
+      char pBuf[16];
+      int pLen = eventUdp.read(pBuf, sizeof(pBuf) - 1);
+      if (pLen > 0) {
+        pBuf[pLen] = '\0';
+        if (strcmp(pBuf, "STOP") == 0) {
+          stopEventPlayback();
+          break;
+        }
+      }
+    }
+
+    int wanted = min((int)sizeof(audio), (remaining > 0 ? remaining : (int)sizeof(audio)));
+    int n = stream->readBytes(audio, wanted);
+    if (n <= 0) break;
+
+    ttsI2S.write(audio, n);
+    if (remaining > 0) remaining -= n;
+
+    // Refresh animated visualizer every 80ms while streaming
+    if (millis() - lastAnim >= 80) {
+      lastAnim = millis();
+      eventVisualizerFrame++;
+      drawEventScreen();
+    }
+  }
+
+  ttsI2S.flush();
+  http.end();
+  stopEventPlayback();
+  return true;
+}
+
+void playFallbackSynth() {
+  const int notes[] = {440, 523, 659, 784, 880, 784, 659, 523, 330, 392, 440, 523, 659, 523, 440, 330};
+  const int noteCount = sizeof(notes) / sizeof(notes[0]);
+  int16_t buffer[240]; // 10ms at 24kHz
+
+  for (int repeat = 0; repeat < 4 && isEventPlaying; repeat++) {
+    for (int i = 0; i < noteCount && isEventPlaying; i++) {
+      if (digitalRead(TOUCH_PIN) == TOUCH_ACTIVE) {
+        delay(150);
+        stopEventPlayback();
+        return;
+      }
+      int freq = notes[i];
+      for (int t = 0; t < 15; t++) {
+        for (int s = 0; s < 240; s++) {
+          float phase = fmodf((float)(t * 240 + s) * freq / 24000.0f, 1.0f);
+          buffer[s] = (int16_t)((phase < 0.5f ? 8000 : -8000) * expf(-((float)t / 15.0f)));
+        }
+        ttsI2S.write((uint8_t*)buffer, sizeof(buffer));
+      }
+      eventVisualizerFrame++;
+      drawEventScreen();
+    }
+  }
+  stopEventPlayback();
+}
+
+void drawEventScreen() {
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("NEBULA EVENT SYNC");
+  display.drawLine(0, 10, 127, 10, WHITE);
+
+  display.setCursor(8, 14);
+  display.println("* SYNCHRONIZED *");
+
+  // Equalizer visualizer: 14 animated frequency bars
+  static const uint8_t baseHeights[14] = {12, 22, 18, 28, 35, 24, 30, 34, 20, 26, 32, 18, 25, 14};
+  for (int i = 0; i < 14; i++) {
+    int x = 8 + i * 8;
+    int h = (baseHeights[i] + (eventVisualizerFrame * (i + 3)) % 16);
+    if (h > 36) h = 36;
+    if (h < 4) h = 4;
+    display.fillRect(x, 52 - h, 5, h, WHITE);
+    display.drawPixel(x + 2, 52 - h - 3, WHITE); // Peak dot
+  }
+
+  display.drawLine(0, 54, 127, 54, WHITE);
+  display.setCursor(18, 56);
+  display.print("Tap: Stop Beat");
+  display.display();
 }
