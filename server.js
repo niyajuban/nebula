@@ -2,48 +2,71 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const dgram = require('dgram');
+
+// --- Event Sync UDP Broadcast Configuration ---
+const EVENT_UDP_PORT = 4210;
+let udpSocket = null;
+try {
+  udpSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  udpSocket.bind(0, () => {
+    try {
+      udpSocket.setBroadcast(true);
+      console.log(`[Event Sync] UDP Broadcast socket active on port ${udpSocket.address().port} (targets port ${EVENT_UDP_PORT})`);
+    } catch (e) {
+      console.warn('[Event Sync] Failed to enable UDP broadcast mode:', e.message);
+    }
+  });
+  udpSocket.on('error', (err) => {
+    console.warn('[Event Sync UDP Error]:', err.message);
+  });
+} catch (err) {
+  console.warn('[Event Sync] UDP socket creation failed:', err.message);
+}
 
 // --- Load .env configuration ---
 function loadEnv() {
-  const envPaths = [
-    path.join(__dirname, '.env'),
-    'C:/Users/niyaj/OneDrive/Documents/nebula_chatbot_backend/.env'
-  ];
+  const envPath = path.join(__dirname, '.env');
 
   const env = {
     PORT: 3000,
-    GEMINI_MODEL: 'gemini-1.5-flash',
+    GEMINI_MODEL: 'gemini-3.6-flash',
     DEEPGRAM_STT_MODEL: 'nova-3',
     DEEPGRAM_TTS_MODEL: 'aura-2-thalia-en',
     GEMINI_API_KEY: '',
-    DEEPGRAM_API_KEY: ''
+    DEEPGRAM_API_KEY: '',
+    WEATHER_CITY: 'Vellore',
+    WEATHER_LAT: 12.9165,
+    WEATHER_LON: 79.1325,
+    WEATHER_UPDATE_MINS: 15
   };
 
-  for (const p of envPaths) {
-    if (fs.existsSync(p)) {
-      try {
-        const content = fs.readFileSync(p, 'utf8');
-        content.split('\n').forEach(line => {
-          const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
-          if (match) {
-            let key = match[1].trim();
-            let val = (match[2] || '').trim();
-            // Strip enclosing quotes and angle brackets <...>
-            val = val.replace(/^<|>$/g, '').replace(/^['\"]|['\"]$/g, '').trim();
-            if (val) env[key] = val;
-          }
-        });
-        console.log(`[Config] Loaded environment variables from ${p}`);
-        break;
-      } catch (err) {
-        console.warn(`[Config] Failed to read ${p}:`, err.message);
-      }
+  if (fs.existsSync(envPath)) {
+    try {
+      const content = fs.readFileSync(envPath, 'utf8');
+      content.split('\n').forEach(line => {
+        const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+        if (match) {
+          let key = match[1].trim();
+          let val = (match[2] || '').trim();
+          // Strip enclosing quotes and angle brackets <...>
+          val = val.replace(/^<|>$/g, '').replace(/^['\"]|['\"]$/g, '').trim();
+          if (val) env[key] = val;
+        }
+      });
+      console.log(`[Config] Loaded environment variables from ${envPath}`);
+    } catch (err) {
+      console.warn(`[Config] Failed to read ${envPath}:`, err.message);
     }
   }
 
   if (process.env.PORT) env.PORT = process.env.PORT;
   if (process.env.GEMINI_API_KEY) env.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   if (process.env.DEEPGRAM_API_KEY) env.DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+  if (process.env.WEATHER_CITY) env.WEATHER_CITY = process.env.WEATHER_CITY;
+  if (process.env.WEATHER_LAT) env.WEATHER_LAT = Number(process.env.WEATHER_LAT);
+  if (process.env.WEATHER_LON) env.WEATHER_LON = Number(process.env.WEATHER_LON);
+  if (process.env.WEATHER_UPDATE_MINS) env.WEATHER_UPDATE_MINS = Number(process.env.WEATHER_UPDATE_MINS);
 
   return env;
 }
@@ -60,8 +83,8 @@ const state = {
   freeHeap: 152340,
   wifi: {
     connected: true,
-    ssid: "IceApple",
-    ip: "10.85.139.73",
+    ssid: "ESP32 Wi-Fi",
+    ip: "ESP32 IP",
     rssi: -62
   },
   screen: {
@@ -69,16 +92,26 @@ const state = {
     idleSeconds: 12
   },
   sensors: {
-    bmpAvailable: true,
-    temperatureC: 24.3,
-    pressureHpa: 1013.2,
+    temperatureC: 25.2,
+    pressureHpa: 985.3,
+    humidity: 88,
+    condition: "Partly cloudy",
+    city: config.WEATHER_CITY || "Vellore",
+    source: "Open-Meteo API",
     isLiveHardware: false,
     lastTelemetryTime: 0
   },
-  bluetooth: {
-    audioStarted: true,
-    phoneConnected: true,
-    phonePlaying: false
+  weather: {
+    city: config.WEATHER_CITY || "Vellore",
+    lat: Number(config.WEATHER_LAT) || 12.9165,
+    lon: Number(config.WEATHER_LON) || 79.1325,
+    temperatureC: 25.2,
+    pressureHpa: 985.3,
+    humidity: 88,
+    condition: "Partly cloudy",
+    weatherCode: 2,
+    lastUpdated: 0,
+    source: "Open-Meteo API"
   },
   chatbot: {
     mode: "voice",
@@ -91,7 +124,7 @@ const state = {
     uiState: "READY",
     statusText: "Ready",
     lastTranscript: "What is the weather today?",
-    lastReply: "I don't have live weather, but you can check an app."
+    lastReply: "It's 25.2°C and partly cloudy in Vellore with 88% humidity."
   },
   pomodoro: {
     state: "IDLE", // "IDLE", "RUNNING", "PAUSED", "BREAK"
@@ -109,8 +142,31 @@ const state = {
   game: {
     active: false,
     score: 0
+  },
+  eventSync: {
+    active: false,
+    track: "event_track.wav",
+    lastCommand: "STOP",
+    timestamp: 0
   }
 };
+
+function broadcastEventSync(cmd) { // 'PLAY' or 'STOP'
+  state.eventSync.active = (cmd === 'PLAY');
+  state.eventSync.lastCommand = cmd;
+  state.eventSync.timestamp = Date.now();
+
+  if (udpSocket) {
+    const msg = Buffer.from(cmd);
+    udpSocket.send(msg, 0, msg.length, EVENT_UDP_PORT, '255.255.255.255', (err) => {
+      if (err) {
+        console.warn(`[Event Sync] UDP Broadcast error for "${cmd}":`, err.message);
+      } else {
+        console.log(`📡 [Event Sync] Broadcasted "${cmd}" to all CyberDecks on UDP port ${EVENT_UDP_PORT}`);
+      }
+    });
+  }
+}
 
 // --- Server-side Authoritative Pomodoro Ticker (1 second) ---
 setInterval(() => {
@@ -131,6 +187,81 @@ setInterval(() => {
     }
   }
 }, 1000);
+
+// --- Open-Meteo Weather Service ---
+function mapWmoWeatherCode(code) {
+  switch (code) {
+    case 0: return 'Clear Sky';
+    case 1: return 'Mainly Clear';
+    case 2: return 'Partly Cloudy';
+    case 3: return 'Overcast';
+    case 45: return 'Fog';
+    case 48: return 'Icy Fog';
+    case 51: return 'Light Drizzle';
+    case 53: return 'Moderate Drizzle';
+    case 55: return 'Dense Drizzle';
+    case 61: return 'Slight Rain';
+    case 63: return 'Moderate Rain';
+    case 65: return 'Heavy Rain';
+    case 71: return 'Slight Snow';
+    case 73: return 'Moderate Snow';
+    case 75: return 'Heavy Snow';
+    case 80: return 'Slight Showers';
+    case 81: return 'Moderate Showers';
+    case 82: return 'Violent Showers';
+    case 95: return 'Thunderstorm';
+    case 96:
+    case 99: return 'Thunderstorm w/ Hail';
+    default: return 'Fair';
+  }
+}
+
+async function fetchLiveWeather() {
+  const lat = config.WEATHER_LAT || 12.9165;
+  const lon = config.WEATHER_LON || 79.1325;
+  const city = config.WEATHER_CITY || 'Vellore';
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,weather_code&timezone=auto`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) {
+      console.warn(`[Weather] Open-Meteo responded with HTTP ${res.status}`);
+      return;
+    }
+    const data = await res.json();
+    if (data && data.current) {
+      const cur = data.current;
+      const condition = mapWmoWeatherCode(cur.weather_code);
+      state.weather = {
+        city: city,
+        lat: Number(lat),
+        lon: Number(lon),
+        temperatureC: Number(cur.temperature_2m),
+        pressureHpa: Number(cur.surface_pressure),
+        humidity: Number(cur.relative_humidity_2m),
+        condition: condition,
+        weatherCode: cur.weather_code,
+        lastUpdated: Date.now(),
+        source: 'Open-Meteo API'
+      };
+      state.sensors.temperatureC = state.weather.temperatureC;
+      state.sensors.pressureHpa = state.weather.pressureHpa;
+      state.sensors.humidity = state.weather.humidity;
+      state.sensors.condition = state.weather.condition;
+      state.sensors.city = state.weather.city;
+      state.sensors.source = state.weather.source;
+
+      console.log(`[Weather] Synced live weather for ${city}: ${state.weather.temperatureC}°C, ${state.weather.humidity}% humidity, ${state.weather.pressureHpa} hPa, ${condition}`);
+    }
+  } catch (err) {
+    console.warn(`[Weather] Error fetching weather for ${city}:`, err.message);
+  }
+}
+
+// Initial fetch & recurring schedule
+fetchLiveWeather();
+const weatherIntervalMins = Math.max(1, Number(config.WEATHER_UPDATE_MINS) || 15);
+setInterval(fetchLiveWeather, weatherIntervalMins * 60 * 1000);
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -211,8 +342,7 @@ function handleGeminiAsk(question) {
       return resolve(`Processed question: "${question}" (Add GEMINI_API_KEY to .env for live AI answers)`);
     }
 
-    // Try configured model, fallback to gemini-1.5-flash if needed
-    const model = config.GEMINI_MODEL || 'gemini-1.5-flash';
+    const model = config.GEMINI_MODEL || 'gemini-3.6-flash';
     const payload = JSON.stringify({
       contents: [
         {
@@ -222,7 +352,7 @@ function handleGeminiAsk(question) {
       systemInstruction: {
         parts: [
           {
-            text: "You are Nebula, a cute, witty, helpful cyberpunk desktop robot companion. Keep answers short, friendly, conversational, and under 2-3 sentences so they sound natural when spoken."
+            text: `You are Nebula, a cute, witty, helpful cyberpunk desktop robot companion. Keep answers short, friendly, conversational, and under 2-3 sentences so they sound natural when spoken. You are located in ${state.weather.city}. Live environmental telemetry: ${state.weather.temperatureC}°C, ${state.weather.condition}, Humidity: ${state.weather.humidity}%, Barometric Pressure: ${state.weather.pressureHpa} hPa.`
           }
         ]
       }
@@ -330,7 +460,7 @@ function handleDeepgramTTS(text, clientRes) {
 }
 
 // --- HTTP Server ---
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   // CORS Preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
@@ -453,9 +583,6 @@ const server = http.createServer((req, res) => {
         if (json.pressureHpa !== undefined || json.pressure !== undefined) {
           state.sensors.pressureHpa = Number(json.pressureHpa !== undefined ? json.pressureHpa : json.pressure);
         }
-        if (json.bmpAvailable !== undefined) {
-          state.sensors.bmpAvailable = Boolean(json.bmpAvailable);
-        }
         if (json.freeHeap !== undefined) {
           state.freeHeap = Number(json.freeHeap);
         }
@@ -478,6 +605,24 @@ const server = http.createServer((req, res) => {
             state.pomodoro.state = 'IDLE';
             state.pomodoro.mode = 'WORK';
             state.pomodoro.timeLeft = state.pomodoro.workDuration;
+          } else if (json.pomoAction === 'start_break') {
+            state.pomodoro.mode = 'BREAK';
+            state.pomodoro.state = 'BREAK';
+            state.pomodoro.timeLeft = state.pomodoro.breakDuration;
+          } else if (json.pomoAction === 'start_work') {
+            state.pomodoro.mode = 'WORK';
+            state.pomodoro.state = 'RUNNING';
+            state.pomodoro.timeLeft = state.pomodoro.workDuration;
+          }
+        }
+
+        // ESP32 To-Do toggle sync
+        if (json.todoToggleId !== undefined) {
+          const toggleId = Number(json.todoToggleId);
+          const item = state.todos.find(t => t.id === toggleId);
+          if (item) {
+            item.completed = !item.completed;
+            console.log(`[Todo] Toggled task #${toggleId} to completed=${item.completed} from ESP32`);
           }
         }
 
@@ -488,9 +633,19 @@ const server = http.createServer((req, res) => {
           ok: true,
           message: 'Hardware telemetry recorded',
           sensors: {
-            temperatureC: state.sensors.temperatureC,
-            pressureHpa: state.sensors.pressureHpa,
-            bmpAvailable: state.sensors.bmpAvailable
+            temperatureC: state.weather.temperatureC,
+            pressureHpa: state.weather.pressureHpa,
+            humidity: state.weather.humidity,
+            condition: state.weather.condition,
+            city: state.weather.city,
+            source: state.weather.source
+          },
+          weather: {
+            temp: state.weather.temperatureC,
+            pressure: state.weather.pressureHpa,
+            humidity: state.weather.humidity,
+            condition: state.weather.condition,
+            city: state.weather.city
           },
           pomodoro: {
             state: state.pomodoro.state,
@@ -499,7 +654,8 @@ const server = http.createServer((req, res) => {
             sessionsCompleted: state.pomodoro.sessionsCompleted
           },
           todos: state.todos,
-          gameActive: state.game.active
+          gameActive: state.game.active,
+          eventSync: state.eventSync
         });
       } catch (err) {
         sendJson(res, 400, { ok: false, error: 'Invalid JSON payload' });
@@ -534,9 +690,14 @@ const server = http.createServer((req, res) => {
           state.pomodoro.state = 'PAUSED';
         } else if (action === 'reset') {
           state.pomodoro.state = 'IDLE';
-          state.pomodoro.mode = 'WORK';
-          state.pomodoro.timeLeft = state.pomodoro.workDuration;
+          state.pomodoro.timeLeft = state.pomodoro.mode === 'BREAK' ? state.pomodoro.breakDuration : state.pomodoro.workDuration;
         } else if (action === 'set') {
+          if (json.mode) {
+            const m = String(json.mode).toUpperCase();
+            state.pomodoro.mode = (m === 'BREAK' || m === 'SHORTBREAK' || m === 'LONGBREAK') ? 'BREAK' : 'WORK';
+            state.pomodoro.state = 'IDLE';
+            state.pomodoro.timeLeft = state.pomodoro.mode === 'BREAK' ? state.pomodoro.breakDuration : state.pomodoro.workDuration;
+          }
           if (json.workMinutes) {
             state.pomodoro.workDuration = Number(json.workMinutes) * 60;
             if (state.pomodoro.state === 'IDLE' && state.pomodoro.mode === 'WORK') {
@@ -635,9 +796,6 @@ const server = http.createServer((req, res) => {
     const isLive = (Date.now() - state.sensors.lastTelemetryTime) < 45000;
     state.sensors.isLiveHardware = isLive;
 
-    const temp = isLive ? state.sensors.temperatureC : Number((state.sensors.temperatureC + (Math.sin(uptime / 20) * 0.1)).toFixed(1));
-    const press = isLive ? state.sensors.pressureHpa : Number((state.sensors.pressureHpa + (Math.cos(uptime / 35) * 0.2)).toFixed(1));
-
     return sendJson(res, 200, {
       device: state.device,
       firmware: state.firmware,
@@ -646,13 +804,16 @@ const server = http.createServer((req, res) => {
       wifi: state.wifi,
       screen: state.screen,
       sensors: {
-        bmpAvailable: state.sensors.bmpAvailable,
-        temperatureC: temp,
-        pressureHpa: press,
+        temperatureC: state.weather.temperatureC,
+        pressureHpa: state.weather.pressureHpa,
+        humidity: state.weather.humidity,
+        condition: state.weather.condition,
+        city: state.weather.city,
+        source: state.weather.source,
         isLiveHardware: isLive,
         lastTelemetryTime: state.sensors.lastTelemetryTime
       },
-      bluetooth: state.bluetooth,
+      weather: state.weather,
       chatbot: state.chatbot,
       pomodoro: {
         state: state.pomodoro.state,
@@ -663,25 +824,35 @@ const server = http.createServer((req, res) => {
         sessionsCompleted: state.pomodoro.sessionsCompleted
       },
       todos: state.todos,
-      gameActive: state.game.active
+      gameActive: state.game.active,
+      eventSync: state.eventSync
     });
   }
 
   if (pathname === '/api/sensors' && req.method === 'GET') {
-    const uptime = Math.floor((Date.now() - state.startTime) / 1000);
     const isLive = (Date.now() - state.sensors.lastTelemetryTime) < 45000;
     state.sensors.isLiveHardware = isLive;
 
-    const temp = isLive ? state.sensors.temperatureC : Number((state.sensors.temperatureC + (Math.sin(uptime / 20) * 0.1)).toFixed(1));
-    const press = isLive ? state.sensors.pressureHpa : Number((state.sensors.pressureHpa + (Math.cos(uptime / 35) * 0.2)).toFixed(1));
-
     return sendJson(res, 200, {
       timestamp: new Date().toISOString(),
-      temperatureC: temp,
-      pressureHpa: press,
-      bmpAvailable: state.sensors.bmpAvailable,
+      temperatureC: state.weather.temperatureC,
+      pressureHpa: state.weather.pressureHpa,
+      humidity: state.weather.humidity,
+      condition: state.weather.condition,
+      city: state.weather.city,
+      source: state.weather.source,
       isLiveHardware: isLive,
       lastTelemetryTime: state.sensors.lastTelemetryTime
+    });
+  }
+
+  if (pathname === '/api/weather' && req.method === 'GET') {
+    if (url.searchParams.get('refresh') === '1' || url.searchParams.get('refresh') === 'true') {
+      await fetchLiveWeather();
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      weather: state.weather
     });
   }
 
@@ -741,14 +912,6 @@ const server = http.createServer((req, res) => {
           });
         }
 
-        if (command === 'toggleBluetoothPlayback') {
-          state.bluetooth.phonePlaying = !state.bluetooth.phonePlaying;
-          return sendJson(res, 200, {
-            status: 'ok',
-            phonePlaying: state.bluetooth.phonePlaying
-          });
-        }
-
         return sendJson(res, 200, {
           status: 'ok',
           received: payload
@@ -757,6 +920,54 @@ const server = http.createServer((req, res) => {
         return sendJson(res, 400, { error: 'Invalid JSON body' });
       }
     });
+    return;
+  }
+
+  // ============================================================
+  // EVENT SYNC BROADCAST API (Method 2)
+  // ============================================================
+
+  if (pathname === '/api/event/play' && req.method === 'POST') {
+    broadcastEventSync('PLAY');
+    return sendJson(res, 200, {
+      ok: true,
+      message: 'Event sync PLAY broadcasted to all CyberDecks',
+      eventSync: state.eventSync
+    });
+  }
+
+  if (pathname === '/api/event/stop' && req.method === 'POST') {
+    broadcastEventSync('STOP');
+    return sendJson(res, 200, {
+      ok: true,
+      message: 'Event sync STOP broadcasted to all CyberDecks',
+      eventSync: state.eventSync
+    });
+  }
+
+  if (pathname === '/api/event/status' && req.method === 'GET') {
+    return sendJson(res, 200, {
+      ok: true,
+      eventSync: state.eventSync
+    });
+  }
+
+  if (pathname === '/api/event/track' && req.method === 'GET') {
+    const trackPath = path.join(PUBLIC_DIR, 'assets', 'event_track.wav');
+    if (!fs.existsSync(trackPath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      return res.end('Event track audio file not found');
+    }
+
+    const stat = fs.statSync(trackPath);
+    res.writeHead(200, {
+      'Content-Type': 'audio/wav',
+      'Content-Length': stat.size,
+      'Connection': 'close',
+      'Access-Control-Allow-Origin': '*'
+    });
+    const stream = fs.createReadStream(trackPath);
+    stream.pipe(res);
     return;
   }
 
@@ -790,7 +1001,10 @@ server.listen(PORT, () => {
   console.log(`   - POST /transcribe (Deepgram STT: ${config.DEEPGRAM_STT_MODEL})`);
   console.log(`   - POST /ask        (Gemini AI:     ${config.GEMINI_MODEL})`);
   console.log(`   - POST /tts        (Deepgram TTS: ${config.DEEPGRAM_TTS_MODEL})`);
-  console.log(`   - POST /api/telemetry (Live BMP180 & hardware state ingestion)`);
+  console.log(`   - POST /api/telemetry (Syncs Pomodoro, To-Dos, and Live Weather)`);
+  console.log(`🌤️  Live Weather API (Open-Meteo):`);
+  console.log(`   - City: ${state.weather.city} (${state.weather.lat}, ${state.weather.lon})`);
+  console.log(`   - GET  /api/weather   (Live Open-Meteo weather JSON)`);
   console.log(`🖥️  Web Dashboard Endpoints:`);
   console.log(`   - GET  /api/status`);
   console.log(`   - GET  /api/sensors`);

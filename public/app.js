@@ -33,7 +33,6 @@ const state = {
 
 /* ====================================================
    0. DEEP SPACE & STARS BACKGROUND CANVAS
-==================================================== */
 function initSpaceCanvas() {
   const canvas = document.getElementById('space-canvas');
   if (!canvas) return;
@@ -195,7 +194,6 @@ function playBlip(freq = 440, type = 'sine', duration = 0.08) {
 
 /* ====================================================
    1. NINTENDO-STYLE MODE SWAPPING
-==================================================== */
 function initNavigation() {
   const prevBtn = document.getElementById('prev-mode-btn');
   const nextBtn = document.getElementById('next-mode-btn');
@@ -274,7 +272,6 @@ function goToMode(index) {
 
 /* ====================================================
    2. TO DO LIST (Two-Way Server Synced)
-==================================================== */
 async function fetchTodos() {
   try {
     const res = await fetch('/api/todos');
@@ -400,7 +397,6 @@ async function deleteTodo(id) {
 
 /* ====================================================
    3. POMODORO TIMER (Two-Way Server Synced)
-==================================================== */
 function initPomodoro() {
   const startBtn = document.getElementById('pomo-start-btn');
   const resetBtn = document.getElementById('pomo-reset-btn');
@@ -524,7 +520,6 @@ function playChime() {
 
 /* ====================================================
    4. BACKEND TELEMETRY
-==================================================== */
 async function sendCommand(command, params) {
   try {
     const res = await fetch('/api/command', {
@@ -623,17 +618,76 @@ async function fetchStatus() {
     if (data.pomodoro) {
       applyPomodoroState(data.pomodoro);
     }
+
+    // Event Sync Party Mode
+    if (data.eventSync) {
+      updateEventSyncUI(data.eventSync);
+    }
   } catch (err) {}
 }
 
 /* ====================================================
+   EVENT SYNC PARTY MODE (Method 2)
+function initEventSync() {
+  const playBtn = document.getElementById('event-sync-play-btn');
+  const stopBtn = document.getElementById('event-sync-stop-btn');
+
+  if (playBtn) {
+    playBtn.addEventListener('click', async () => {
+      playBlip(880, 'triangle', 0.12);
+      try {
+        const res = await fetch('/api/event/play', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          updateEventSyncUI(data.eventSync);
+        }
+      } catch (e) {}
+    });
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener('click', async () => {
+      playBlip(440, 'sine', 0.08);
+      try {
+        const res = await fetch('/api/event/stop', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          updateEventSyncUI(data.eventSync);
+        }
+      } catch (e) {}
+    });
+  }
+}
+
+function updateEventSyncUI(eventSync) {
+  const strip = document.getElementById('event-sync-strip');
+  const playBtn = document.getElementById('event-sync-play-btn');
+  const stopBtn = document.getElementById('event-sync-stop-btn');
+  const label = document.getElementById('event-track-label');
+
+  if (!strip || !eventSync) return;
+
+  if (eventSync.active) {
+    strip.classList.add('active');
+    if (playBtn) playBtn.classList.add('hidden');
+    if (stopBtn) stopBtn.classList.remove('hidden');
+    if (label) label.textContent = 'BROADCASTING SYNC BEAT TO ALL CYBERDECKS 🎶';
+  } else {
+    strip.classList.remove('active');
+    if (playBtn) playBtn.classList.remove('hidden');
+    if (stopBtn) stopBtn.classList.add('hidden');
+    if (label) label.textContent = 'Cyberpunk Theme • 24kHz Ready';
+  }
+}
+
+/* ====================================================
    5. INITIALIZATION
-==================================================== */
 document.addEventListener('DOMContentLoaded', () => {
   initSpaceCanvas();
   initNavigation();
   initTodoList();
   initPomodoro();
+  initEventSync();
 
   fetchSensors();
   fetchUIState();
